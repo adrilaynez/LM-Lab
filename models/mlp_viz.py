@@ -107,7 +107,7 @@ def render_mlp():
             height=400,
             width=450
         )
-        st.plotly_chart(fig_h1, use_container_width=True)
+        st.plotly_chart(fig_h1, use_container_width=False)
     
     with col2:
         # Hidden layer 2 weights heatmap
@@ -125,7 +125,7 @@ def render_mlp():
             height=400,
             width=450
         )
-        st.plotly_chart(fig_h2, use_container_width=True)
+        st.plotly_chart(fig_h2, use_container_width=False)
     
     st.divider()
     
@@ -154,10 +154,10 @@ def render_mlp():
                     x = context[:, -checkpoint['config']['block_size']:]
                     
                     # Get logits
-                    logits, _ = model(x)
+                    logits, _ = model(x)  # Shape: (batch_size, vocab_size)
                     
                     # Apply temperature
-                    logits = logits[:, -1, :] / temperature
+                    logits = logits / temperature
                     
                     # Sample
                     probs = torch.softmax(logits, dim=-1)
@@ -191,8 +191,8 @@ def render_mlp():
             x = torch.tensor([tokens], dtype=torch.long)
             
             with torch.no_grad():
-                logits, _ = model(x)
-                logits = logits[:, -1, :]
+                logits, _ = model(x)  # Shape: (batch_size, vocab_size)
+                # Note: MLP returns logits directly, not per-token
                 probs = torch.softmax(logits, dim=-1)
             
             # Get top-k predictions
@@ -226,7 +226,7 @@ def render_mlp():
                 'Probability': [f"{p:.4f}" for p in top_probs],
                 'Rank': list(range(1, top_k + 1))
             }
-            st.dataframe(pred_data, use_container_width=True)
+            st.dataframe(pred_data, width='stretch')
     
     st.divider()
     
