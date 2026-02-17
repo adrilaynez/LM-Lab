@@ -112,24 +112,27 @@ def main():
         with model_cols[idx]:
             is_active = (key == model_name)
             label = f"{'✅ ' if is_active else '  '}{config['name']}"
+            bg_color = "#FF6C6C" if is_active else "#444"
+            border_color = "#FF6C6C" if is_active else "transparent"
+            font_weight = "bold" if is_active else "normal"
             
             # Create markdown link to switch models
-            st.markdown(
+            html_link = (
                 f'<a href="?model={key}" target="_self" style="'
                 f'display: inline-block; '
                 f'padding: 0.5rem 1rem; '
-                f'background: {"#FF6C6C" if is_active else "#444"};'
+                f'background: {bg_color}; '
                 f'color: white; '
                 f'border-radius: 0.3rem; '
                 f'text-decoration: none; '
-                f'font-weight: {"bold" if is_active else "normal"}; '
+                f'font-weight: {font_weight}; '
                 f'width: 100%; '
                 f'text-align: center; '
                 f'transition: 0.2s; '
-                f'border: 2px solid {"#FF6C6C" if is_active else "transparent"}; '
-                f'">{label}</a>',
-                unsafe_allow_html=True
+                f'border: 2px solid {border_color}; '
+                f'">{label}</a>'
             )
+            st.markdown(html_link, unsafe_allow_html=True)
     
     st.divider()
     
