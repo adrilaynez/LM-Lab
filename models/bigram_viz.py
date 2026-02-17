@@ -209,7 +209,7 @@ def render_bigram():
                         })
                     
                     df = pd.DataFrame(pred_data)
-                    st.dataframe(df, use_container_width=True)
+                    st.dataframe(df, width='stretch')
                     
                     fig = go.Figure(data=[
                         go.Bar(

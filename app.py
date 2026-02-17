@@ -5,6 +5,7 @@ Main router for model visualization modules - optimized for iframe embedding
 
 import streamlit as st
 from models.bigram_viz import render_bigram
+from models.mlp_viz import render_mlp
 
 # ============ PAGE CONFIGURATION ============
 st.set_page_config(
@@ -48,13 +49,13 @@ MODELS = {
         "name": "Bigram Model",
         "description": "Character-level bigram language model trained on Paul Graham essays",
         "render": render_bigram
+    },
+    "mlp": {
+        "name": "MLP Model",
+        "description": "Multi-layer perceptron with character embeddings - learns non-linear patterns",
+        "render": render_mlp
     }
     # Future models - just add and register here:
-    # "mlp": {
-    #     "name": "MLP Model",
-    #     "description": "Multi-layer perceptron with character embeddings",
-    #     "render": render_mlp
-    # },
     # "rnn": {
     #     "name": "LSTM/RNN Model",
     #     "description": "Recurrent neural network for sequence modeling",

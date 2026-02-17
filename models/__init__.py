@@ -1,4 +1,5 @@
 from .bigram import BigramModel
+from .mlp import MLPModel
 
 def get_model_class(model_type):
     """
@@ -6,6 +7,8 @@ def get_model_class(model_type):
     """
     if model_type == 'bigram':
         return BigramModel
+    elif model_type == 'mlp':
+        return MLPModel
     elif model_type == 'gpt':
         raise NotImplementedError("GPT not implemented yet")
     else:
