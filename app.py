@@ -73,14 +73,8 @@ def main():
     """
     Main router function with query_params support + interactive UI selector
     Usage: ?model=bigram (default), ?model=mlp, ?model=rnn, etc.
-    Or select model from interactive UI at top
+    Or click model buttons to switch
     """
-    # ============ MODEL SELECTOR UI ============
-    col1, col2, col3 = st.columns([2, 3, 2])
-    
-    with col1:
-        st.markdown("**🤖 Select Model:**")
-    
     # Get model from URL query params - compatible with older Streamlit versions
     try:
         query_params = st.query_params
@@ -100,17 +94,36 @@ def main():
     
     model_name = model_name.lower()
     
-    # ============ INTERACTIVE MODEL SELECTOR ============
-    with col2:
-        # Create buttons for each model
-        model_buttons = st.columns(len(MODELS))
-        for idx, (key, config) in enumerate(MODELS.items()):
-            with model_buttons[idx]:
-                button_text = f"{'✅ ' if key == model_name else '○ '}{config['name']}"
-                if st.button(button_text, use_container_width=True, key=f"model_btn_{key}"):
-                    # Update URL query params
-                    st.query_params = {"model": key}
-                    st.rerun()
+    # ============ MODEL SELECTOR UI WITH HTML LINKS ============
+    # Create a nice selector using HTML links
+    selector_html = '<div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap;">'
+    selector_html += '<span style="font-weight: 600;">🤖 Select Model:</span>'
+    
+    for key, config in MODELS.items():
+        is_active = key == model_name
+        bg_color = "rgba(255, 108, 108, 0.2)" if is_active else "rgba(255, 255, 255, 0.1)"
+        border_color = "#FF6C6C" if is_active else "rgba(255, 255, 255, 0.2)"
+        text = f"{'✅ ' if is_active else '• '}{config['name']}"
+        
+        selector_html += f'''
+        <a href="?model={key}" style="
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            background: {bg_color};
+            border: 2px solid {border_color};
+            border-radius: 0.5rem;
+            color: inherit;
+            font-weight: {'600' if is_active else '400'};
+            transition: all 0.2s;
+            display: inline-block;
+        " onmouseover="this.style.background='rgba(255, 108, 108, 0.3)'; this.style.borderColor='#FF6C6C';" 
+           onmouseout="this.style.background='{bg_color}'; this.style.borderColor='{border_color}';">
+            {text}
+        </a>
+        '''
+    
+    selector_html += '</div>'
+    st.markdown(selector_html, unsafe_allow_html=True)
     
     # Validate model exists
     if model_name not in MODELS:
