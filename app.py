@@ -71,9 +71,8 @@ MODELS = {
 # ============ ROUTER LOGIC ============
 def main():
     """
-    Main router function with query_params support + interactive UI selector
+    Main router function with query_params support
     Usage: ?model=bigram (default), ?model=mlp, ?model=rnn, etc.
-    Or click model buttons to switch
     """
     # Get model from URL query params - compatible with older Streamlit versions
     try:
@@ -86,44 +85,53 @@ def main():
         except:
             query_params = {}
     
-    # Convert query_params to dict if needed
-    if isinstance(query_params, dict):
-        model_name = query_params.get("model", ["bigram"])[0] if "model" in query_params else "bigram"
-    else:
-        model_name = query_params.get("model", "bigram") if hasattr(query_params, 'get') else "bigram"
+    # Safe extraction of model parameter
+    model_name = "bigram"  # default
     
-    model_name = model_name.lower()
+    if query_params:
+        if isinstance(query_params, dict):
+            # If dict, check for "model" key
+            if "model" in query_params:
+                val = query_params["model"]
+                model_name = val[0] if isinstance(val, list) else val
+        else:
+            # If object with get method
+            if hasattr(query_params, 'get'):
+                val = query_params.get("model")
+                model_name = val[0] if isinstance(val, list) else (val if val else "bigram")
     
-    # ============ MODEL SELECTOR UI WITH HTML LINKS ============
-    # Create a nice selector using HTML links
-    selector_html = '<div style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap;">'
-    selector_html += '<span style="font-weight: 600;">🤖 Select Model:</span>'
+    model_name = model_name.lower().strip()
     
-    for key, config in MODELS.items():
-        is_active = key == model_name
-        bg_color = "rgba(255, 108, 108, 0.2)" if is_active else "rgba(255, 255, 255, 0.1)"
-        border_color = "#FF6C6C" if is_active else "rgba(255, 255, 255, 0.2)"
-        text = f"{'✅ ' if is_active else '• '}{config['name']}"
-        
-        selector_html += f'''
-        <a href="?model={key}" style="
-            text-decoration: none;
-            padding: 0.5rem 1rem;
-            background: {bg_color};
-            border: 2px solid {border_color};
-            border-radius: 0.5rem;
-            color: inherit;
-            font-weight: {'600' if is_active else '400'};
-            transition: all 0.2s;
-            display: inline-block;
-        " onmouseover="this.style.background='rgba(255, 108, 108, 0.3)'; this.style.borderColor='#FF6C6C';" 
-           onmouseout="this.style.background='{bg_color}'; this.style.borderColor='{border_color}';">
-            {text}
-        </a>
-        '''
+    # ============ MODEL SELECTOR UI - SIMPLE & RELIABLE ============
+    st.markdown("### 🤖 Select Model")
     
-    selector_html += '</div>'
-    st.markdown(selector_html, unsafe_allow_html=True)
+    # Create columns for model buttons
+    model_cols = st.columns(len(MODELS))
+    
+    for idx, (key, config) in enumerate(MODELS.items()):
+        with model_cols[idx]:
+            is_active = (key == model_name)
+            label = f"{'✅ ' if is_active else '  '}{config['name']}"
+            
+            # Create markdown link to switch models
+            st.markdown(
+                f'<a href="?model={key}" target="_self" style="'
+                f'display: inline-block; '
+                f'padding: 0.5rem 1rem; '
+                f'background: {"#FF6C6C" if is_active else "#444"};'
+                f'color: white; '
+                f'border-radius: 0.3rem; '
+                f'text-decoration: none; '
+                f'font-weight: {"bold" if is_active else "normal"}; '
+                f'width: 100%; '
+                f'text-align: center; '
+                f'transition: 0.2s; '
+                f'border: 2px solid {"#FF6C6C" if is_active else "transparent"}; '
+                f'">{label}</a>',
+                unsafe_allow_html=True
+            )
+    
+    st.divider()
     
     # Validate model exists
     if model_name not in MODELS:
