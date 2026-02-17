@@ -73,9 +73,24 @@ def main():
     Main router function with query_params support
     Usage: ?model=bigram (default), ?model=mlp, ?model=rnn, etc.
     """
-    # Get model from URL query params
-    query_params = st.query_params
-    model_name = query_params.get("model", "bigram").lower()
+    # Get model from URL query params - compatible with older Streamlit versions
+    try:
+        query_params = st.query_params
+    except AttributeError:
+        # Fallback for older Streamlit versions
+        try:
+            import streamlit as st_compat
+            query_params = st_compat.experimental_get_query_params()
+        except:
+            query_params = {}
+    
+    # Convert query_params to dict if needed
+    if isinstance(query_params, dict):
+        model_name = query_params.get("model", ["bigram"])[0] if "model" in query_params else "bigram"
+    else:
+        model_name = query_params.get("model", "bigram") if hasattr(query_params, 'get') else "bigram"
+    
+    model_name = model_name.lower()
     
     # Validate model exists
     if model_name not in MODELS:
