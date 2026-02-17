@@ -71,9 +71,16 @@ MODELS = {
 # ============ ROUTER LOGIC ============
 def main():
     """
-    Main router function with query_params support
+    Main router function with query_params support + interactive UI selector
     Usage: ?model=bigram (default), ?model=mlp, ?model=rnn, etc.
+    Or select model from interactive UI at top
     """
+    # ============ MODEL SELECTOR UI ============
+    col1, col2, col3 = st.columns([2, 3, 2])
+    
+    with col1:
+        st.markdown("**🤖 Select Model:**")
+    
     # Get model from URL query params - compatible with older Streamlit versions
     try:
         query_params = st.query_params
@@ -92,6 +99,18 @@ def main():
         model_name = query_params.get("model", "bigram") if hasattr(query_params, 'get') else "bigram"
     
     model_name = model_name.lower()
+    
+    # ============ INTERACTIVE MODEL SELECTOR ============
+    with col2:
+        # Create buttons for each model
+        model_buttons = st.columns(len(MODELS))
+        for idx, (key, config) in enumerate(MODELS.items()):
+            with model_buttons[idx]:
+                button_text = f"{'✅ ' if key == model_name else '○ '}{config['name']}"
+                if st.button(button_text, use_container_width=True, key=f"model_btn_{key}"):
+                    # Update URL query params
+                    st.query_params = {"model": key}
+                    st.rerun()
     
     # Validate model exists
     if model_name not in MODELS:
