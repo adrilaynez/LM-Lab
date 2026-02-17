@@ -9,24 +9,24 @@ class CharTokenizer:
         self.vocab_size = 0
 
     def train(self, text):
-        """Builds the vocabulary from text"""
+        """Build vocabulary from text"""
         self.chars = sorted(list(set(text)))
         self.vocab_size = len(self.chars)
         self.stoi = {ch:i for i,ch in enumerate(self.chars)}
         self.itos = {i:ch for i,ch in enumerate(self.chars)}
         
     def encode(self, s):
-        """String -> List of Ints"""
+        """String -> List of integers"""
         return [self.stoi[c] for c in s]
 
     def decode(self, l):
-        """List of Ints -> String"""
+        """List of integers -> String"""
         if isinstance(l, torch.Tensor):
             l = l.tolist()
         return ''.join([self.itos[i] for i in l])
 
     def save(self, path):
-        """Saves vocab to disk"""
+        """Save vocabulary to disk"""
         import pickle
         with open(path, 'wb') as f:
             pickle.dump({
@@ -36,7 +36,7 @@ class CharTokenizer:
             }, f)
     
     def load(self, path):
-        """Loads vocab from disk"""
+        """Load vocabulary from disk"""
         import pickle
         with open(path, 'rb') as f:
             data = pickle.load(f)
@@ -45,4 +45,3 @@ class CharTokenizer:
             self.chars = data['chars']
             self.vocab_size = len(self.chars)
 
-            
