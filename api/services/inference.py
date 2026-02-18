@@ -321,6 +321,17 @@ def run_bigram_inference(text: str, top_k: int = 10) -> dict:
         "use_cases": detail.get("use_cases", []),
     }
 
+    # ------ 5. Historical Context ------
+    historical_context = {
+        "description": "The Bigram model (N=1) represents the simplest Markov chain approximation of language, predicting the next character based solely on the immediate predecessor.",
+        "limitations": [
+            "Lacks long-range memory (context size = 1)",
+            "Cannot capture grammar structure beyond adjacent characters",
+            "Treats 'q' -> 'u' and 't' -> 'h' as localized probabilities without understanding words"
+        ],
+        "modern_evolution": "This strictly local probabilistic approach is the foundation for N-gram models and eventually neural language models, which expanded context to thousands of tokens."
+    }
+
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
     return {
@@ -336,6 +347,7 @@ def run_bigram_inference(text: str, top_k: int = 10) -> dict:
             "transition_matrix": transition_matrix,
             "training": training,
             "architecture": architecture,
+            "historical_context": historical_context,
         },
         "metadata": {
             "inference_time_ms": round(elapsed_ms, 2),

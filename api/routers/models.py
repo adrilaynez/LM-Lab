@@ -188,6 +188,28 @@ async def bigram_predict_stepwise(body: BigramStepwiseRequest):
     return BigramStepwisePredictionResponse(**result)
 
 
+@router.post("/bigram/dataset_lookup", response_model=DatasetLookupResponse)
+async def bigram_dataset_lookup(body: DatasetLookupRequest):
+    """
+    Find examples of specific Bigram sequence in the dataset.
+    """
+    try:
+        # Bigram context is just 1 character
+        # Validate context length? run_dataset_lookup doesn't strictly enforce it, 
+        # but for bigram it makes sense to be 1 char context + 1 char next_token.
+        
+        result = inference.run_dataset_lookup(
+            context_tokens=body.context,
+            next_token=body.next_token
+        )
+        return result
+    except Exception as e:
+         raise HTTPException(
+             status_code=500,
+             detail={"code": "DATASET_LOOKUP_ERROR", "message": str(e)}
+         )
+
+
 # --------------------------------------------------------------------------- #
 #  N-Gram & Interpretability
 # --------------------------------------------------------------------------- #

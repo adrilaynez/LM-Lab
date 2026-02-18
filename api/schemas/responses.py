@@ -146,6 +146,12 @@ class TrainingHistory(BaseModel):
     unique_characters: int | None = None
 
 
+class HistoricalContext(BaseModel):
+    description: str
+    limitations: list[str]
+    modern_evolution: str
+
+
 class ModelArchitectureInfo(BaseModel):
     """Model registry metadata (how it works, strengths, etc.)."""
     name: str
@@ -163,6 +169,7 @@ class BigramVisualization(BaseModel):
     transition_matrix: TransitionMatrix
     training: TrainingHistory
     architecture: ModelArchitectureInfo
+    historical_context: HistoricalContext
 
 
 class BigramInferenceResponse(BaseModel):
@@ -208,10 +215,7 @@ class BigramStepwisePredictionResponse(BaseModel):
 
 # ============ N-Gram Visualization ============
 
-class HistoricalContext(BaseModel):
-    description: str
-    limitations: list[str]
-    modern_evolution: str
+
 
 
 class NGramDiagnostics(BaseModel):
