@@ -72,7 +72,10 @@ def search_dataset(context_tokens: list[str], next_token: str = None, limit: int
         post = text[idx + query_len : end]
         
         # Escape newlines for display
-        snippet = f"{pre.replace('\n', ' ')}[[{match.replace('\n', ' ')}]]{post.replace('\n', ' ')}"
+        pre_clean = pre.replace('\n', ' ')
+        match_clean = match.replace('\n', ' ')
+        post_clean = post.replace('\n', ' ')
+        snippet = f"{pre_clean}[[{match_clean}]]{post_clean}"
         examples.append(snippet)
         
     return {
