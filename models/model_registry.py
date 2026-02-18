@@ -140,6 +140,37 @@ MODEL_INFO = {
             'Large-scale language models'
         ],
         'visualization': 'Attention patterns between tokens'
+    },
+    'ngram': {
+        'name': 'N-Gram Model',
+        'description': 'Generalization of Bigram to N-token context windows.',
+        'type': 'Statistical',
+        'complexity': 'Low-Medium',
+        'parameters': 'vocab_size^(N+1)',
+        'training_time': 'Fast (seconds)',
+        'memory_efficient': 'Decreases with N',
+        'how_it_works': [
+            '1. Counts occurrences of N-token sequences',
+            '2. Stores probabilities in (N+1)-dimensional tensor',
+            '3. Predicts next token based on previous N tokens',
+            '4. "Active Slice" visualizes the relevant transition matrix for current context'
+        ],
+        'strengths': [
+            'Simple and interpretable',
+            'Captures local dependencies better than Bigram',
+            'Exact probabilities for seen contexts'
+        ],
+        'limitations': [
+            'Exponential parameter growth with N',
+            'Sparse data problem for large N',
+            'No semantic understanding'
+        ],
+        'use_cases': [
+            'Baselines',
+            'Spell checking',
+            'Simple text generation'
+        ],
+        'visualization': 'Active Slice of Transition Tensor'
     }
 }
 

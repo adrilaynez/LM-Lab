@@ -204,3 +204,46 @@ class BigramStepwisePredictionResponse(BaseModel):
     steps: list[StepwisePredictionStep]
     final_prediction: str
     metadata: InferenceMetadata
+
+
+# ============ N-Gram Visualization ============
+
+class HistoricalContext(BaseModel):
+    description: str
+    limitations: list[str]
+    modern_evolution: str
+
+
+class NGramDiagnostics(BaseModel):
+    vocab_size: int
+    context_size: int
+    estimated_context_space: int  # V^(context_size)
+    sparsity: float | None = None  # Optional
+
+
+class ActiveSlice(BaseModel):
+    """Visualization of the active slice of the N-gram tensor."""
+    context_tokens: list[str]
+    matrix: TransitionMatrix
+    next_token_probs: dict[str, float]
+
+
+class NGramInferenceResponse(BaseModel):
+    """Response for N-Gram visualization endpoint."""
+    model_id: str
+    context_size: int
+    context: list[str]
+    active_slice: ActiveSlice
+    diagnostics: NGramDiagnostics
+    historical_context: HistoricalContext
+    metadata: InferenceMetadata
+
+
+# ============ Dataset Explorer ============
+
+class DatasetLookupResponse(BaseModel):
+    """Response for dataset example lookup."""
+    query: str
+    count: int
+    examples: list[str]
+    source: str

@@ -1,4 +1,11 @@
-from .requests import PredictRequest, GenerateRequest, BigramGenerateRequest, BigramStepwiseRequest
+from .requests import (
+    PredictRequest, 
+    GenerateRequest, 
+    BigramGenerateRequest, 
+    BigramStepwiseRequest,
+    NGramVisualizeRequest,
+    DatasetLookupRequest
+)
 from .responses import (
     HealthResponse,
     ModelSummary,
@@ -14,4 +21,7 @@ from .responses import (
     BigramGenerationResponse,
     BigramStepwisePredictionResponse,
     StepwisePredictionStep,
+    NGramInferenceResponse,
+    ActiveSlice,
+    DatasetLookupResponse,
 )

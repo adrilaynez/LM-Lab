@@ -10,6 +10,8 @@ from api.schemas.requests import (
     GenerateRequest,
     BigramGenerateRequest,
     BigramStepwiseRequest,
+    NGramVisualizeRequest,
+    DatasetLookupRequest,
 )
 from api.schemas.responses import (
     ModelSummary,
@@ -24,6 +26,8 @@ from api.schemas.responses import (
     PredictionResult,
     TokenInfo,
     InferenceMetadata,
+    NGramInferenceResponse,
+    DatasetLookupResponse
 )
 from api.services import inference
 from api.services.serializer import serialize_internals
@@ -182,6 +186,67 @@ async def bigram_predict_stepwise(body: BigramStepwiseRequest):
         )
 
     return BigramStepwisePredictionResponse(**result)
+
+
+# --------------------------------------------------------------------------- #
+#  N-Gram & Interpretability
+# --------------------------------------------------------------------------- #
+
+@router.post("/ngram/visualize", response_model=NGramInferenceResponse)
+async def ngram_visualize(body: NGramVisualizeRequest):
+    """
+    Visualize N-Gram model inference (N=1..5).
+    Returns active slice of transition tensor.
+    """
+    try:
+        result = inference.run_ngram_inference(
+            text=body.text,
+            context_size=body.context_size,
+            top_k=body.top_k
+        )
+        return result
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("CONTEXT_TOO_LARGE"):
+            parts = msg.split(":")
+            req_n = int(parts[1])
+            max_n = int(parts[2])
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "context_too_large",
+                    "message": "N-gram context size exceeds practical limits due to combinatorial explosion.",
+                    "details": {
+                        "requested_n": req_n,
+                        "max_supported_n": max_n,
+                        "explanation": f"The number of possible contexts grows exponentially with N (VocabularySize^{req_n}), making higher-order N-grams impractical without massive data and storage."
+                    }
+                }
+            )
+        raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": str(e)})
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "NGRAM_INFERENCE_ERROR", "message": str(e)}
+        )
+
+
+@router.post("/ngram/dataset_lookup", response_model=DatasetLookupResponse)
+async def dataset_lookup(body: DatasetLookupRequest):
+    """
+    Find examples of specific N-gram sequence in the dataset.
+    """
+    try:
+        result = inference.run_dataset_lookup(
+            context_tokens=body.context,
+            next_token=body.next_token
+        )
+        return result
+    except Exception as e:
+         raise HTTPException(
+             status_code=500,
+             detail={"code": "DATASET_LOOKUP_ERROR", "message": str(e)}
+         )
 
 
 # --------------------------------------------------------------------------- #

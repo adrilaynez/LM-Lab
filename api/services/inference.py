@@ -7,6 +7,7 @@ import sys
 import time
 from pathlib import Path
 from functools import lru_cache
+from fastapi import HTTPException
 
 import torch
 import torch.nn.functional as F
@@ -18,6 +19,7 @@ if _project_root not in sys.path:
 
 from models import get_model_class
 from models.model_registry import MODEL_INFO
+from models.ngram import NGramModel
 from utils.tokenizer import CharTokenizer
 from utils.data import load_data
 from api.config import CHECKPOINT_DIR, DATA_DIR, DEVICE
@@ -58,6 +60,29 @@ def _load_model(model_id: str):
     model.to(DEVICE)
 
     return model, tokenizer, config, training_info
+
+
+@lru_cache(maxsize=8)
+def _load_ngram_model(context_size: int):
+    """
+    Load specific N-Gram model from precomputed checkpoint.
+    """
+    # Check if checkpoint exists
+    if not (CHECKPOINT_DIR / f"ngram_n{context_size}.pt").exists():
+        raise FileNotFoundError(f"N-Gram checkpoint for N={context_size} not found.")
+
+    model = NGramModel(vocab_size=0, context_size=context_size) # vocab loaded from ckpt
+    model.eval()
+    model.to(DEVICE)
+    
+    # Create tokenizer from model vocabulary
+    tokenizer = CharTokenizer()
+    tokenizer.chars = model.vocab
+    tokenizer.stoi = model.stoi
+    tokenizer.itos = model.itos
+    tokenizer.vocab_size = len(model.vocab)
+    
+    return model, tokenizer
 
 
 # --------------------------------------------------------------------------- #
@@ -432,3 +457,112 @@ def bigram_predict_stepwise(text: str, steps: int = 3) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+#  N-Gram & Interpretability
+# --------------------------------------------------------------------------- #
+
+from utils.data_explorer import search_dataset
+
+
+
+
+def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
+    """
+    N-Gram visualization inference with educational safeguards.
+    """
+    MAX_CONTEXT_SIZE = 5
+    if context_size > MAX_CONTEXT_SIZE:
+        raise ValueError(f"CONTEXT_TOO_LARGE:{context_size}:{MAX_CONTEXT_SIZE}")
+
+    try:
+        model, tokenizer = _load_ngram_model(context_size)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="N-Gram model not initialized. Run precomputation.")
+
+    t0 = time.perf_counter()
+    
+    # 1. Forward Pass (Prediction)
+    encoded = tokenizer.encode(text)
+    idx = torch.tensor([encoded], dtype=torch.long, device=DEVICE)
+    
+    with torch.no_grad():
+        logits, _ = model(idx)
+        # Logits is [1, 1, V] (last step)
+        last_logits = logits[0, -1]
+        probs = torch.exp(last_logits) # we returned log_probs
+        
+    top_probs, top_indices = torch.topk(probs, min(top_k, probs.shape[0]))
+    
+    # 2. Visualization (Active Slice)
+    internals = model.get_internals(idx)
+    
+    context_tokens = []
+    if "conditioned_on" in internals:
+        c_idxs = internals["conditioned_on"]
+        try:
+             # c_idxs is list of ints
+             context_tokens = [tokenizer.itos.get(i, '?') for i in c_idxs]
+        except:
+            pass
+    
+    # Transition Matrix Formatting
+    matrix_data = {"shape": [0,0], "data": [], "row_labels": [], "col_labels": []}
+    
+    if "active_slice" in internals:
+        slc_probs = internals["active_slice"] # Tensor [V]
+        slc_probs = slc_probs.cpu().numpy()
+        
+        matrix_data = {
+            "shape": [1, len(slc_probs)],
+            "data": [slc_probs.tolist()],
+            "row_labels": ["Ctx"], # Single row active slice
+            "col_labels": tokenizer.chars
+        }
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    
+    predictions = [
+        {"token": tokenizer.decode([i.item()]), "probability": round(p.item(), 6)}
+        for p, i in zip(top_probs, top_indices)
+    ]
+    
+    ctx_str = list(text[-context_size:]) if text else []
+    
+    return {
+        "model_id": f"ngram_n{context_size}",
+        "context_size": context_size,
+        "context": ctx_str,
+        "active_slice": {
+            "context_tokens": context_tokens,
+            "matrix": matrix_data,
+            "next_token_probs": {p["token"]: p["probability"] for p in predictions}
+        },
+        "diagnostics": {
+            "vocab_size": tokenizer.vocab_size,
+            "context_size": context_size,
+            "estimated_context_space": tokenizer.vocab_size ** context_size,
+            "sparsity": 0.99 if context_size > 1 else 0.0
+        },
+        "historical_context": {
+            "description": "N-gram language models were historically applied at both character and word levels before subword tokenization (BPE, WordPiece) became standard in modern NLP.",
+            "limitations": [
+                "Word-level vocabularies become extremely large",
+                "Sparse data problem for high-order contexts",
+                "Poor generalization to unseen sequences"
+            ],
+            "modern_evolution": "These limitations motivated the development of neural language models and tokenization techniques used in Transformers."
+        },
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": DEVICE,
+            "vocab_size": tokenizer.vocab_size,
+        }
+    }
+
+
+def run_dataset_lookup(context_tokens: list[str], next_token: str) -> dict:
+    """
+    Search dataset for context traces.
+    Returns DatasetLookupResponse dict.
+    """
+    return search_dataset(context_tokens, next_token, limit=10)

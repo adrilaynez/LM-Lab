@@ -81,3 +81,45 @@ class BigramStepwiseRequest(BaseModel):
         le=10,
         description="Number of characters to predict step-by-step",
     )
+
+
+class NGramVisualizeRequest(BaseModel):
+    """Input for N-Gram visualization."""
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Input text (context)",
+        examples=["hello"],
+    )
+    context_size: int = Field(
+        ...,
+        ge=1,
+        le=20,
+        description="N-gram context size (N-1). 1=Bigram, 2=Trigram.",
+        examples=[2]
+    )
+    top_k: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Top predictions to return"
+    )
+
+
+class DatasetLookupRequest(BaseModel):
+    """Input for dataset explorer."""
+    context: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=10,
+        description="List of context tokens",
+        examples=[["Q"]]
+    )
+    next_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=1,
+        description="Next token to look for",
+        examples=["u"]
+    )

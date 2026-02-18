@@ -1,5 +1,6 @@
 from .bigram import BigramModel
 from .mlp import MLPModel
+from .ngram import NGramModel
 
 def get_model_class(model_type):
     """
@@ -7,6 +8,8 @@ def get_model_class(model_type):
     """
     if model_type == 'bigram':
         return BigramModel
+    elif model_type == 'ngram':
+        return NGramModel
     elif model_type == 'mlp':
         return MLPModel
     elif model_type == 'gpt':

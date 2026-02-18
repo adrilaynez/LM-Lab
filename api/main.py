@@ -42,6 +42,16 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"  ⚠️  Failed to pre-load {model_id}: {e}")
 
+    # Pre-load N-Gram models (N=1..5)
+    from api.services.inference import _load_ngram_model
+    print("  Pre-loading N-Gram models (N=1..5)...")
+    for n in range(1, 6):
+        try:
+            _load_ngram_model(n)
+            print(f"  ✅ Pre-loaded NGram-N{n}")
+        except Exception as e:
+            print(f"  ⚠️  Failed to pre-load NGram-N{n}: {e}")
+
     print(f"\n🚀 LM-Lab API ready — {len(available)} model(s) loaded\n")
     yield  # App runs
     print("\n🛑 LM-Lab API shutting down\n")
