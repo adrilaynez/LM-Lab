@@ -478,6 +478,12 @@ from utils.data_explorer import search_dataset
 
 
 
+from api.schemas.responses import (
+    NGramInferenceResponse, NGramVisualization, NGramTrainingInfo, 
+    NGramDiagnostics, ActiveSlice, ModelArchitectureInfo, 
+    HistoricalContext, TransitionMatrix, TokenInfo, PredictionResult, InferenceMetadata
+)
+
 def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
     """
     N-Gram visualization inference with educational safeguards.
@@ -495,6 +501,10 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
     
     # 1. Forward Pass (Prediction)
     encoded = tokenizer.encode(text)
+    # Pad if needed? N-gram model handles short context by taking what's available
+    # But for strict N-gram, we usually need N previous tokens.
+    # Our model._get_probs handles context < N by masking or returning uniform/backoff simulation.
+    
     idx = torch.tensor([encoded], dtype=torch.long, device=DEVICE)
     
     with torch.no_grad():
@@ -517,9 +527,32 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         except:
             pass
     
-    # Transition Matrix Formatting
-    matrix_data = {"shape": [0,0], "data": [], "row_labels": [], "col_labels": []}
+    # Transition Matrix / Active Slice Formatting
+    transition_matrix = None
+    active_slice = None
     
+    if context_size == 1:
+        # For N=1 (Bigram), we might want to show the full matrix if requested,
+        # but pure N-gram view usually focuses on the active context.
+        # However, Bigram has a dedicated "Transformation Matrix" view.
+        # For uniformity, we can populate transition_matrix for N=1.
+        # But wait, N-gram UI might handle this differently.
+        # The schema allows both.
+        # If N=1, let's provide the full matrix if feasible, OR just the active slice.
+        # Given "Bigram parity", Bigram shows full matrix.
+        # Let's see if we can get it.
+        # The model has .tensor if dense.
+        if hasattr(model, 'tensor'):
+             # It's a [V, V] tensor
+             prob_matrix = model.tensor.cpu().numpy()
+             transition_matrix = {
+                "shape": list(prob_matrix.shape),
+                "data": prob_matrix.tolist(),
+                "row_labels": tokenizer.chars,
+                "col_labels": tokenizer.chars
+             }
+    
+    # Construct Active Slice (always relevant)
     if "active_slice" in internals:
         slc_probs = internals["active_slice"] # Tensor [V]
         slc_probs = slc_probs.cpu().numpy()
@@ -530,43 +563,114 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
             "row_labels": ["Ctx"], # Single row active slice
             "col_labels": tokenizer.chars
         }
+        
+        active_slice = {
+            "context_tokens": context_tokens,
+            "matrix": matrix_data,
+            "next_token_probs": {
+                tokenizer.itos.get(i, str(i)): float(p) 
+                for i, p in enumerate(slc_probs) if p > 0.0001 # Filter zero-probs to save space? Or send all?
+                # Send all for heatmap
+            }
+        }
+        # Re-populate next_token_probs with ALL for heatmap
+        active_slice["next_token_probs"] = {
+             tokenizer.itos.get(i, str(i)): float(p) for i, p in enumerate(slc_probs)
+        }
+
+    # 3. Training Stats & Diagnostics
+    model_stats = model.get_training_stats() # Dict
+    
+    training = {
+        "total_tokens": model_stats.get("total_tokens"),
+        "unique_chars": model_stats.get("unique_chars"),
+        "unique_contexts": model_stats.get("unique_contexts"),
+        "context_space_size": model_stats.get("context_space_size"),
+        "context_utilization": model_stats.get("context_utilization"),
+        "sparsity": model_stats.get("sparsity"),
+        "transition_density": model_stats.get("transition_density")
+    }
+
+    # Dynamic Diagnostics
+    est_context_space = tokenizer.vocab_size ** context_size
+    diagnostics = {
+        "vocab_size": tokenizer.vocab_size,
+        "context_size": context_size,
+        "estimated_context_space": est_context_space,
+        "sparsity": model_stats.get("sparsity"),
+        "observed_contexts": model_stats.get("unique_contexts"),
+        "context_utilization": model_stats.get("context_utilization")
+    }
+    
+    # 4. Architecture Info
+    architecture = {
+        "name": f"{context_size}-Gram Model",
+        "description": f"A probabilistic model that predicts the next character based on the previous {context_size} characters.",
+        "type": "Probabilistic / Markov",
+        "complexity": "O(1) inference, O(V^N) space",
+        "how_it_works": [
+            f"Looks at the last {context_size} characters (context).",
+            "Consults a pre-calculated table of frequencies from the training text.",
+            "Returns the probability distribution for the next character."
+        ],
+        "strengths": [
+            "Extremely fast inference.",
+            "Simple to understand and visualize.",
+            "Captures local correlations well."
+        ],
+        "limitations": [
+            "Combinatorial explosion: Context space grows exponentially with N.",
+            "Sparsity: Most contexts are never seen in training." if context_size > 2 else "Limited context window.",
+            "No understanding of semantics or long-range dependencies."
+        ],
+        "use_cases": [
+            "Simple autocomplete.",
+            "Language identification.",
+            "Baseline for more complex models."
+        ]
+    }
+    
+    # 5. Historical Context
+    hist_ctx = {
+        "description": "N-gram models were the dominant approach in NLP from the 1950s until the rise of neural networks in the 2000s.",
+        "limitations": [
+            "The 'Curse of Dimensionality': As N increases, the number of possible contexts explodes, requiring impossible amounts of data.",
+            "Lack of generalization: Seeing 'cat' doesn't help predict 'dog' in similar contexts without shared representations.",
+            "Strict matching: Slight variations in context lead to completely different (or missing) predictions."
+        ],
+        "modern_evolution": "Neural networks solved the sparsity problem by using distributed representations (embeddings), allowing models to generalize across similar contexts."
+    }
 
     elapsed_ms = (time.perf_counter() - t0) * 1000
     
-    predictions = [
+    predictions_list = [
         {"token": tokenizer.decode([i.item()]), "probability": round(p.item(), 6)}
         for p, i in zip(top_probs, top_indices)
     ]
     
-    ctx_str = list(text[-context_size:]) if text else []
+    full_dist = probs.tolist()
     
     return {
         "model_id": f"ngram_n{context_size}",
+        "model_name": f"{context_size}-Gram",
         "context_size": context_size,
-        "context": ctx_str,
-        "active_slice": {
-            "context_tokens": context_tokens,
-            "matrix": matrix_data,
-            "next_token_probs": {p["token"]: p["probability"] for p in predictions}
+        "input": {
+            "text": text,
+            "token_ids": encoded
         },
-        "diagnostics": {
-            "vocab_size": tokenizer.vocab_size,
-            "context_size": context_size,
-            "estimated_context_space": tokenizer.vocab_size ** context_size,
-            "sparsity": 0.99 if context_size > 1 else 0.0
-        },
-        "historical_context": {
-            "description": "N-gram language models were historically applied at both character and word levels before subword tokenization (BPE, WordPiece) became standard in modern NLP.",
-            "limitations": [
-                "Word-level vocabularies become extremely large",
-                "Sparse data problem for high-order contexts",
-                "Poor generalization to unseen sequences"
-            ],
-            "modern_evolution": "These limitations motivated the development of neural language models and tokenization techniques used in Transformers."
+        "predictions": predictions_list,
+        "full_distribution": full_dist,
+        "visualization": {
+            "transition_matrix": transition_matrix,
+            "active_slice": active_slice,
+            "training": training,
+            "diagnostics": diagnostics,
+            "architecture": architecture,
+            "historical_context": hist_ctx
         },
         "metadata": {
             "inference_time_ms": round(elapsed_ms, 2),
-            "device": DEVICE,
+            "device": str(DEVICE),
             "vocab_size": tokenizer.vocab_size,
         }
     }
@@ -578,3 +682,169 @@ def run_dataset_lookup(context_tokens: list[str], next_token: str) -> dict:
     Returns DatasetLookupResponse dict.
     """
     return search_dataset(context_tokens, next_token, limit=10)
+
+
+# --------------------------------------------------------------------------- #
+#  N-Gram Stepwise Prediction & Generation
+# --------------------------------------------------------------------------- #
+
+def ngram_predict_stepwise(text: str, context_size: int, steps: int = 3, top_k: int = 10) -> dict:
+    """
+    N-Gram step-by-step character prediction using sliding context windows.
+    Generalized version of bigram_predict_stepwise for context_size = N.
+    Returns a dict matching NGramStepwisePredictionResponse schema.
+    """
+    MAX_CONTEXT_SIZE = 5
+    if context_size > MAX_CONTEXT_SIZE:
+        raise ValueError(f"CONTEXT_TOO_LARGE:{context_size}:{MAX_CONTEXT_SIZE}")
+
+    try:
+        model, tokenizer = _load_ngram_model(context_size)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="N-Gram model not initialized. Run precomputation.")
+
+    # Validate that all characters in text are in vocabulary
+    for ch in text:
+        if ch not in tokenizer.stoi:
+            raise ValueError(
+                f"Character '{ch}' not in vocabulary. "
+                f"Available: {tokenizer.chars[:20]}..."
+            )
+
+    t0 = time.perf_counter()
+
+    # Build initial context from the last N characters of text
+    encoded = tokenizer.encode(text)
+    # If text is shorter than context_size, use what we have (model handles short context)
+    context_indices = encoded[-context_size:]
+
+    step_results = []
+
+    with torch.no_grad():
+        for step_num in range(1, steps + 1):
+            # Get context window as characters for reporting
+            context_chars = [tokenizer.itos[i] for i in context_indices]
+
+            # Look up probability distribution
+            probs = model._get_probs(context_indices)
+
+            # Handle unseen context (zero vector) → fallback to uniform
+            prob_sum = probs.sum().item()
+            if prob_sum < 1e-9:
+                probs = torch.ones(model.vocab_size, device=DEVICE) / model.vocab_size
+
+            # Top-k predictions for this step
+            top_probs_t, top_indices_t = torch.topk(probs, min(top_k, probs.shape[0]))
+            top_k_preds = [
+                {"token": tokenizer.decode([idx.item()]), "probability": round(p.item(), 6)}
+                for p, idx in zip(top_probs_t, top_indices_t)
+            ]
+
+            # Sample next token
+            idx_next = torch.multinomial(probs, num_samples=1)
+            next_char_idx = idx_next.item()
+            next_char = tokenizer.itos[next_char_idx]
+            prob = probs[next_char_idx].item()
+
+            step_results.append({
+                "step": step_num,
+                "char": next_char,
+                "probability": round(prob, 6),
+                "context_window": context_chars,
+                "top_k": top_k_preds,
+            })
+
+            # Slide context window: drop oldest, append new
+            context_indices = context_indices[1:] + [next_char_idx]
+            # If context was shorter than context_size, it grows up to context_size
+            if len(context_indices) > context_size:
+                context_indices = context_indices[-context_size:]
+
+    final_prediction = "".join(s["char"] for s in step_results)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    return {
+        "model_id": f"ngram_n{context_size}",
+        "context_size": context_size,
+        "input_text": text,
+        "steps": step_results,
+        "final_prediction": final_prediction,
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": str(DEVICE),
+            "vocab_size": tokenizer.vocab_size,
+        },
+    }
+
+
+def ngram_generate(start_text: str, context_size: int, num_tokens: int = 100, temperature: float = 1.0) -> dict:
+    """
+    N-Gram text generation with temperature sampling.
+    Generalized version of bigram_generate for context_size = N.
+    Uses purely lookup-based inference against precomputed probability tables.
+    Returns a dict matching NGramGenerationResponse schema.
+    """
+    MAX_CONTEXT_SIZE = 5
+    if context_size > MAX_CONTEXT_SIZE:
+        raise ValueError(f"CONTEXT_TOO_LARGE:{context_size}:{MAX_CONTEXT_SIZE}")
+
+    try:
+        model, tokenizer = _load_ngram_model(context_size)
+    except FileNotFoundError:
+        raise HTTPException(status_code=503, detail="N-Gram model not initialized. Run precomputation.")
+
+    # Validate start_text characters
+    for ch in start_text:
+        if ch not in tokenizer.stoi:
+            raise ValueError(
+                f"Character '{ch}' not in vocabulary. "
+                f"Available: {tokenizer.chars[:20]}..."
+            )
+
+    t0 = time.perf_counter()
+
+    # Initialize output with seed text
+    encoded = tokenizer.encode(start_text)
+    output_indices = list(encoded)
+
+    with torch.no_grad():
+        for _ in range(num_tokens):
+            # Take last context_size characters as context
+            context_indices = output_indices[-context_size:]
+
+            # Lookup probability distribution
+            probs = model._get_probs(context_indices)
+
+            # Handle unseen context (zero vector) → fallback to uniform
+            prob_sum = probs.sum().item()
+            if prob_sum < 1e-9:
+                probs = torch.ones(model.vocab_size, device=DEVICE) / model.vocab_size
+
+            # Apply temperature
+            if temperature != 1.0:
+                # Convert to log-space, scale, convert back
+                log_probs = torch.log(probs + 1e-10)
+                log_probs = log_probs / temperature
+                probs = F.softmax(log_probs, dim=-1)
+
+            # Sample
+            idx_next = torch.multinomial(probs, num_samples=1)
+            output_indices.append(idx_next.item())
+
+    generated_text = tokenizer.decode(output_indices)
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    return {
+        "model_id": f"ngram_n{context_size}",
+        "context_size": context_size,
+        "generated_text": generated_text,
+        "length": len(generated_text),
+        "temperature": temperature,
+        "start_text": start_text,
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": str(DEVICE),
+            "vocab_size": tokenizer.vocab_size,
+        },
+    }
+

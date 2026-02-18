@@ -232,14 +232,36 @@ class ActiveSlice(BaseModel):
     next_token_probs: dict[str, float]
 
 
+class NGramTrainingInfo(BaseModel):
+    """Training statistics for N-Gram models (hydrated from checkpoint)."""
+    total_tokens: int | None = None
+    unique_chars: int | None = None
+    unique_contexts: int | None = None
+    context_space_size: int | None = None
+    context_utilization: float | None = None  # unique_contexts / context_space
+    sparsity: float | None = None             # 1 - (nonzero / potential)
+    transition_density: float | None = None   # avg transitions per context
+
+
+class NGramVisualization(BaseModel):
+    """Visualization-ready data for N-Gram models."""
+    transition_matrix: TransitionMatrix | None = None  # For N=1
+    active_slice: ActiveSlice | None = None            # For N>1
+    training: NGramTrainingInfo
+    diagnostics: NGramDiagnostics
+    architecture: ModelArchitectureInfo
+    historical_context: HistoricalContext | None = None
+
+
 class NGramInferenceResponse(BaseModel):
     """Response for N-Gram visualization endpoint."""
     model_id: str
+    model_name: str
     context_size: int
-    context: list[str]
-    active_slice: ActiveSlice
-    diagnostics: NGramDiagnostics
-    historical_context: HistoricalContext
+    input: TokenInfo
+    predictions: list[PredictionResult]
+    full_distribution: list[float] | None = None
+    visualization: NGramVisualization
     metadata: InferenceMetadata
 
 
@@ -251,3 +273,37 @@ class DatasetLookupResponse(BaseModel):
     count: int
     examples: list[str]
     source: str
+
+
+# ============ N-Gram Stepwise Prediction ============
+
+class NGramStepwiseStep(BaseModel):
+    """Single step in N-Gram stepwise prediction."""
+    step: int
+    char: str
+    probability: float
+    context_window: list[str] = Field(description="The N characters used as context for this step")
+    top_k: list[PredictionResult] = Field(default=[], description="Top-k predictions at this step")
+
+
+class NGramStepwisePredictionResponse(BaseModel):
+    """N-Gram step-by-step character prediction result."""
+    model_id: str
+    context_size: int
+    input_text: str
+    steps: list[NGramStepwiseStep]
+    final_prediction: str
+    metadata: InferenceMetadata
+
+
+# ============ N-Gram Generation ============
+
+class NGramGenerationResponse(BaseModel):
+    """N-Gram text generation result with temperature sampling."""
+    model_id: str
+    context_size: int
+    generated_text: str
+    length: int
+    temperature: float
+    start_text: str
+    metadata: InferenceMetadata

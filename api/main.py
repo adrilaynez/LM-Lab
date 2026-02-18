@@ -20,7 +20,7 @@ from api.config import (
     API_TITLE,
     API_DESCRIPTION,
     API_VERSION,
-    CORS_ORIGINS,
+
 )
 from api.routers import health, meta, models
 
@@ -71,9 +71,17 @@ app = FastAPI(
 )
 
 # CORS
+# Configuración de CORS
+# Reemplaza con la URL REAL de tu frontend (ej: https://mi-web.vercel.app)
+# O usa ["*"] para permitir todo (solo para pruebas, no recomendado en producción final)
+origins = [
+    "https://tu-frontend-desplegado.com",
+    "http://localhost:3000", # Para que siga funcionando en local
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

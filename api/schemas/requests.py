@@ -123,3 +123,63 @@ class DatasetLookupRequest(BaseModel):
         description="Next token to look for",
         examples=["u"]
     )
+
+
+class NGramStepwiseRequest(BaseModel):
+    """Input for N-Gram step-by-step character prediction."""
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Input text; prediction uses last N characters as context",
+        examples=["The quick"],
+    )
+    context_size: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="N-gram context size (1=Bigram, 2=Trigram, etc.)",
+        examples=[2],
+    )
+    steps: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Number of characters to predict step-by-step",
+    )
+    top_k: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="Top predictions per step",
+    )
+
+
+class NGramGenerateRequest(BaseModel):
+    """Input for N-Gram text generation."""
+    start_text: str = Field(
+        default="The ",
+        min_length=1,
+        max_length=100,
+        description="Seed text to start generation from (at least N characters recommended)",
+        examples=["The "],
+    )
+    context_size: int = Field(
+        ...,
+        ge=1,
+        le=5,
+        description="N-gram context size (1=Bigram, 2=Trigram, etc.)",
+        examples=[2],
+    )
+    num_tokens: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="Number of characters to generate",
+    )
+    temperature: float = Field(
+        default=1.0,
+        gt=0.0,
+        le=2.0,
+        description="Sampling temperature (lower = more deterministic)",
+    )

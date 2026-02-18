@@ -13,7 +13,6 @@ import torch
 import torch.nn.functional as F
 from pathlib import Path
 from collections import defaultdict, Counter
-from tqdm import tqdm
 
 # Ensure project root is importable
 _project_root = str(Path(__file__).resolve().parent.parent)
@@ -38,23 +37,22 @@ def run_precompute():
     print(f"📖 Loaded corpus: {len(text)} characters")
 
     # 2. Build Tokenizer (Character-level)
-    tokenizer = CharTokenizer()
     # Ensure fixed vocabulary for consistency across all N
-    all_chars = sorted(list(set(text)))
-    tokenizer.chars = all_chars # This might be slightly different from load_data's internal if not careful, but fine for now
-    # We should probably trust the tokenizer to build itself from text if we want consistency?
-    # Actually, let's reuse the logic from CharTokenizer fit usually, but here we manually set it to be safe 
-    # or just let it fit.
-    # The Generic CharTokenizer in utils/tokenizer.py likely fits on init or has a fit method. 
-    # Let's double check `utils/tokenizer.py` if needed. 
-    # For now, let's assume simple standard construction:
     chars = sorted(list(set(text)))
     vocab_size = len(chars)
     stoi = {ch: i for i, ch in enumerate(chars)}
-    itos = {i: ch for i, ch in enumerate(chars)}
+    # itos = {i: ch for i, ch in enumerate(chars)}
+    all_chars = chars
     
     print(f"🔤 Vocabulary Size: {vocab_size}")
     
+    # Tqdm fallback
+    try:
+        from tqdm import tqdm
+    except ImportError:
+        def tqdm(iterator, **kwargs):
+            return iterator
+            
     # 3. Compute N-grams for N=1..5
     MAX_N = 5
     
@@ -62,35 +60,12 @@ def run_precompute():
         print(f"\n📊 Processing N={n}...")
         
         # Container for counts:
-        # For N=1 (Bigram), context is 1 char -> next char. We want a dense matrix usually?
-        # Actually for consistency, let's use a dictionary for all N, 
-        # but convert to Dense Tensor for small N if we want, OR just always use Sparse Dict 
-        # and convert to Dense on the fly for the "Active Slice".
-        # The prompt asks for: "Transition Tensor shape [V^N, V] OR sparse dict"
-        # For N=1, V^1 * V is small (96*96).
-        # For N=5, 96^5 is huge. Must be sparse.
-        
-        # We will use a nested dictionary structure: context_tuple -> Counter(next_char_idx)
-        # This is essentially a sparse CSR representation logic.
-        
         counts = defaultdict(Counter)
-        
-        # Collect counts
-        # Context size is N. So we look at N characters, predict N+1th? 
-        # Wait, standard N-gram terminology:
-        # "Bigram" (N=2) usually means P(w_i | w_{i-1}). Context size = 1.
-        # "Trigram" (N=3) means P(w_i | w_{i-2}, w_{i-1}). Context size = 2.
-        # The prompt says: "Build character-level N-gram counts for N=1..5"
-        # AND "For N=1 -> return full bigram matrix". This implies N=Context Size.
-        # "For N>1 -> compute ACTIVE SLICE: P(next | last N-1 chars)" -> Wait.
-        # If N=1 is Bigram, then context size is 1.
-        # If the prompt says "N-Gram Engine (N=1..5)", and "N=1 -> return full bigram matrix",
-        # it likely means N refers to the CONTEXT SIZE.
-        # Let's stick to CONTEXT_SIZE = N.
-        
         context_size = n
         
-        for i in tqdm(range(len(text) - context_size)):
+        # Collect counts with robust progress
+        iterations = len(text) - context_size
+        for i in tqdm(range(iterations), desc=f"N={n}"):
             # Context window
             ctx_str = text[i : i + context_size]
             next_char = text[i + context_size]
@@ -100,31 +75,32 @@ def run_precompute():
             
             counts[ctx_idxs][next_idx] += 1
             
-        # Convert to probabilities and save
-        # We'll save the raw counts or normalized probs? 
-        # "Convert counts to probability tensors"
-        # To save space, we can save:
-        #  { 
-        #    context_tuple: { next_idx: count, ... },
-        #    ...
-        #  }
-        # And compute probs on load? Or save probs? 
-        # Saving floats takes more space than ints. But load time is faster.
-        # Let's save a custom sparse structure.
+        # --- Compute Rich Statistics ---
         
-        # Structure to save:
-        # keys: list of context tuples (indices)
-        # values: list of {next_idx: prob} dicts
-        # BUT JSON keys must be strings.
-        # Pickle/Torch save handles tuples fine.
+        # 1. Total observed transitions (sum of all counts)
+        total_transitions = sum(sum(next_counts.values()) for next_counts in counts.values())
         
-        # Let's finalize the data structure for the checkpoint:
-        # For N=1 (Context=1), we can save a dense tensor [V, V]. 
-        # For N>1, we MUST use sparse.
+        # 2. Context Statistics
+        unique_contexts = len(counts)
+        context_space_size = vocab_size ** context_size
+        context_utilization = unique_contexts / context_space_size if context_space_size > 0 else 0.0
+        
+        # 3. Transition Statistics (Sparsity)
+        nonzero_transitions = sum(len(next_counts) for next_counts in counts.values())
+        potential_observed_transitions = unique_contexts * vocab_size
+        
+        sparsity = 1.0 - (nonzero_transitions / potential_observed_transitions) if potential_observed_transitions > 0 else 1.0
+        
+        transition_density = nonzero_transitions / unique_contexts if unique_contexts > 0 else 0.0
+        
+        print(f"   Matches: {total_transitions:,}")
+        print(f"   Unique Contexts: {unique_contexts:,} / {context_space_size:,} ({context_utilization:.2%})")
+        print(f"   Sparsity (observed): {sparsity:.2%}")
+            
+        # Convert to probabilities and save structure
         
         if context_size == 1:
             # Special case: Dense Matrix for Bigram (N=1 context)
-            # Shapes: [V, V]
             W = torch.zeros((vocab_size, vocab_size), dtype=torch.float32)
             for ctx, next_counts in counts.items():
                 ctx_idx = ctx[0]
@@ -143,8 +119,6 @@ def run_precompute():
             sparse_data = {}
             for ctx, next_counts in counts.items():
                 total = sum(next_counts.values())
-                # Normalize and store
-                # Only store non-zero transitions
                 probs = {k: v / total for k, v in next_counts.items()}
                 sparse_data[ctx] = probs
             
@@ -154,14 +128,19 @@ def run_precompute():
                 "vocab": all_chars
             }
             
-        # Add metadata
+        # Add rich metadata
         saved_data["metadata"] = {
             "context_size": context_size,
+            "vocab_size": vocab_size, # Added for explicit retrieval
             "training_stats": {
                 "total_tokens": len(text),
                 "unique_chars": vocab_size,
-                "unique_contexts": len(counts),
-                "context_space_size": vocab_size ** context_size
+                "unique_contexts": unique_contexts,
+                "context_space_size": context_space_size,
+                "context_utilization": context_utilization,
+                "sparsity": sparsity, # Observed sparsity
+                "transition_density": transition_density,
+                "total_transitions": total_transitions
             }
         }
         
@@ -169,7 +148,7 @@ def run_precompute():
         filename = f"ngram_n{context_size}.pt"
         out_path = CHECKPOINT_DIR / filename
         torch.save(saved_data, out_path)
-        print(f"✅ Saved {filename} (Contexts: {len(counts)})")
+        print(f"✅ Saved {filename}")
 
 if __name__ == "__main__":
     try:

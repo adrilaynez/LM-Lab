@@ -39,6 +39,15 @@ class NGramModel(nn.Module):
             self.sparse_data = data["data"]
             self.is_sparse = True
             
+        # Hydrate training stats
+        self.training_stats = self.meta.get("training_stats", {})
+        
+    def get_training_stats(self):
+        """
+        Return training statistics for visualization.
+        """
+        return self.training_stats
+            
     def forward(self, idx):
         """
         Mock forward pass to match API interface.

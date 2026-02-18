@@ -12,6 +12,8 @@ from api.schemas.requests import (
     BigramStepwiseRequest,
     NGramVisualizeRequest,
     DatasetLookupRequest,
+    NGramStepwiseRequest,
+    NGramGenerateRequest,
 )
 from api.schemas.responses import (
     ModelSummary,
@@ -27,7 +29,9 @@ from api.schemas.responses import (
     TokenInfo,
     InferenceMetadata,
     NGramInferenceResponse,
-    DatasetLookupResponse
+    DatasetLookupResponse,
+    NGramStepwisePredictionResponse,
+    NGramGenerationResponse,
 )
 from api.services import inference
 from api.services.serializer import serialize_internals
@@ -269,6 +273,82 @@ async def dataset_lookup(body: DatasetLookupRequest):
              status_code=500,
              detail={"code": "DATASET_LOOKUP_ERROR", "message": str(e)}
          )
+
+
+@router.post("/ngram/predict_stepwise", response_model=NGramStepwisePredictionResponse)
+async def ngram_predict_stepwise(body: NGramStepwiseRequest):
+    """
+    Step-by-step character prediction using N-Gram sliding context windows.
+    Returns each predicted character with its context window and top-k probabilities.
+    """
+    try:
+        result = inference.ngram_predict_stepwise(
+            text=body.text,
+            context_size=body.context_size,
+            steps=body.steps,
+            top_k=body.top_k,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("CONTEXT_TOO_LARGE"):
+            parts = msg.split(":")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "context_too_large",
+                    "message": "N-gram context size exceeds practical limits.",
+                    "details": {
+                        "requested_n": int(parts[1]),
+                        "max_supported_n": int(parts[2]),
+                    }
+                }
+            )
+        raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": msg})
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "NGRAM_STEPWISE_ERROR", "message": str(e)}
+        )
+
+    return NGramStepwisePredictionResponse(**result)
+
+
+@router.post("/ngram/generate", response_model=NGramGenerationResponse)
+async def ngram_generate(body: NGramGenerateRequest):
+    """
+    Generate text using N-Gram model with temperature-controlled sampling.
+    Uses purely lookup-based inference against precomputed probability tables.
+    """
+    try:
+        result = inference.ngram_generate(
+            start_text=body.start_text,
+            context_size=body.context_size,
+            num_tokens=body.num_tokens,
+            temperature=body.temperature,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("CONTEXT_TOO_LARGE"):
+            parts = msg.split(":")
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "context_too_large",
+                    "message": "N-gram context size exceeds practical limits.",
+                    "details": {
+                        "requested_n": int(parts[1]),
+                        "max_supported_n": int(parts[2]),
+                    }
+                }
+            )
+        raise HTTPException(status_code=400, detail={"code": "INVALID_INPUT", "message": msg})
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "NGRAM_GENERATION_ERROR", "message": str(e)}
+        )
+
+    return NGramGenerationResponse(**result)
 
 
 # --------------------------------------------------------------------------- #
