@@ -4,8 +4,10 @@ Main router for model visualization modules - optimized for iframe embedding
 """
 
 import streamlit as st
-from models.bigram_viz import render_bigram
-from models.mlp_viz import render_mlp
+import importlib
+
+# Import model registry metadata
+from models.model_registry import MODEL_INFO, get_model_info
 
 # ============ PAGE CONFIGURATION ============
 st.set_page_config(
@@ -19,151 +21,165 @@ st.set_page_config(
 st.markdown("""
     <style>
     /* Hide Streamlit header and footer */
-    header {display: none !important;}
-    footer {display: none !important;}
+    header {visibility: hidden;}
+    footer {visibility: hidden;}
     .streamlit-container {padding: 0rem !important;}
     
     /* Remove default margins and padding */
-    [data-testid="stVerticalBlock"] {padding-left: 0rem !important; padding-right: 0rem !important;}
+    [data-testid="stVerticalBlock"] {padding-left: 0rem !important; padding-right: 0rem !important; gap: 0rem !important;}
     
     /* Glass background for theme blending with Blowfish Tailwind theme */
+    .stApp {background: transparent !important;}
     .main {background: transparent !important;}
     [data-testid="stAppViewContainer"] {background: transparent !important;}
     
     /* Ensure full width responsiveness in iframe */
-    .block-container {padding-left: 1rem !important; padding-right: 1rem !important; max-width: 100% !important;}
+    .block-container {
+        padding-top: 1rem !important;
+        padding-bottom: 0rem !important;
+        padding-left: 1rem !important; 
+        padding-right: 1rem !important; 
+        max-width: 100% !important;
+    }
     
     /* Hide Made with Streamlit badge */
     footer:nth-child(n) {display: none !important;}
     .viewerBadge_container__r5tak {display: none !important;}
     
     /* Remove scrollbars for cleaner embedding */
-    html, body {overflow-x: hidden !important;}
+    /* html, body {overflow-x: hidden !important;} */
+    
+    /* Dashboard Card Styles */
+    .model-card {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        transition: transform 0.2s, box-shadow 0.2s;
+        cursor: pointer;
+        height: 100%;
+    }
+    .model-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        background-color: rgba(255, 255, 255, 0.1);
+        border-color: #FF6C6C;
+    }
+    .model-title {
+        color: #FF6C6C;
+        font-size: 1.2rem;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+    .model-desc {
+        color: #ddd;
+        font-size: 0.9rem;
+    }
+    
+    /* Custom buttons */
+    .stButton>button {
+        background-color: #FF6C6C;
+        color: white;
+        border: none;
+        border-radius: 5px;
+    }
+    .stButton>button:hover {
+        background-color: #ff4d4d;
+        color: white;
+        border: none;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# ============ MODEL REGISTRY & ROUTING ============
-# Scalable registry for all model visualizations
-MODELS = {
-    "bigram": {
-        "name": "Bigram Model",
-        "description": "Character-level bigram language model trained on Paul Graham essays",
-        "render": render_bigram
-    },
-    "mlp": {
-        "name": "MLP Model",
-        "description": "Multi-layer perceptron with character embeddings - learns non-linear patterns",
-        "render": render_mlp
-    }
-    # Future models - just add and register here:
-    # "rnn": {
-    #     "name": "LSTM/RNN Model",
-    #     "description": "Recurrent neural network for sequence modeling",
-    #     "render": render_rnn
-    # },
-    # "transformer": {
-    #     "name": "Transformer Model",
-    #     "description": "Multi-head attention-based language model",
-    #     "render": render_transformer
-    # }
-}
 
 # ============ ROUTER LOGIC ============
-def main():
-    """
-    Main router function with query_params support
-    Usage: ?model=bigram (default), ?model=mlp, ?model=rnn, etc.
-    """
-    # Get model from URL query params - compatible with older Streamlit versions
+def get_query_param(key):
+    """Get query parameter with compatibility for older Streamlit versions"""
     try:
         query_params = st.query_params
+        val = query_params.get(key)
+        return val if val else None
     except AttributeError:
-        # Fallback for older Streamlit versions
+        # Fallback
         try:
             import streamlit as st_compat
             query_params = st_compat.experimental_get_query_params()
+            val = query_params.get(key)
+            return val[0] if val and isinstance(val, list) else val
         except:
-            query_params = {}
+            return None
+
+def main():
+    """
+    Main router function.
+    Usage:
+    - Root: Dashboard showing available models
+    - ?model=name: Load specific model visualization
+    """
     
-    # Safe extraction of model parameter
-    model_name = "bigram"  # default
+    # Get model from URL query params
+    model_name = get_query_param("model")
     
-    if query_params:
-        if isinstance(query_params, dict):
-            # If dict, check for "model" key
-            if "model" in query_params:
-                val = query_params["model"]
-                model_name = val[0] if isinstance(val, list) else val
-        else:
-            # If object with get method
-            if hasattr(query_params, 'get'):
-                val = query_params.get("model")
-                model_name = val[0] if isinstance(val, list) else (val if val else "bigram")
-    
-    model_name = model_name.lower().strip()
-    
-    # ============ MODEL SELECTOR UI - SIMPLE & RELIABLE ============
-    st.markdown("### 🤖 Select Model")
-    
-    # Create columns for model buttons
-    model_cols = st.columns(len(MODELS))
-    
-    for idx, (key, config) in enumerate(MODELS.items()):
-        with model_cols[idx]:
-            is_active = (key == model_name)
-            label = f"{'✅ ' if is_active else '  '}{config['name']}"
-            bg_color = "#FF6C6C" if is_active else "#444"
-            border_color = "#FF6C6C" if is_active else "transparent"
-            font_weight = "bold" if is_active else "normal"
+    if model_name:
+        model_name = model_name.lower().strip()
+        
+        # Validate model exists
+        if model_name not in MODEL_INFO:
+            st.error(f"❌ Model '{model_name}' not found.")
+            st.info(f"**Available models:** {', '.join(MODEL_INFO.keys())}")
+            if st.button("⬅️ Back to Dashboard"):
+                st.query_params.clear()
+                st.rerun()
+            return
+        
+        # Load and render the selected model
+        try:
+            # Dynamic import based on model name
+            if model_name == "bigram":
+                from models.bigram_viz import render_bigram
+                render_bigram()
+            elif model_name == "mlp":
+                from models.mlp_viz import render_mlp
+                render_mlp()
+            # Add future models here
+            else:
+                st.warning(f"⚠️ Visualization for '{model_name}' is not yet implemented.")
+                
+        except Exception as e:
+            st.error(f"❌ Error rendering {model_name} visualization")
+            st.error(f"Details: {str(e)}")
+            with st.expander("📋 See full error trace"):
+                st.code(str(e), language="text")
+                
+    else:
+        # ============ DASHBOARD VIEW ============
+        st.markdown("<h1 style='text-align: center; color: #FF6C6C; margin-bottom: 2rem;'>🧠 LM-Lab Model Registry</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center; margin-bottom: 3rem;'>Select a model below to explore its architecture and capabilities.</p>", unsafe_allow_html=True)
+        
+        # Create a grid layout for model cards
+        cols = st.columns(3)
+        
+        for idx, (key, info) in enumerate(MODEL_INFO.items()):
+            col_idx = idx % 3
             
-            # Create markdown link to switch models
-            html_link = (
-                f'<a href="?model={key}" target="_self" style="'
-                f'display: inline-block; '
-                f'padding: 0.5rem 1rem; '
-                f'background: {bg_color}; '
-                f'color: white; '
-                f'border-radius: 0.3rem; '
-                f'text-decoration: none; '
-                f'font-weight: {font_weight}; '
-                f'width: 100%; '
-                f'text-align: center; '
-                f'transition: 0.2s; '
-                f'border: 2px solid {border_color}; '
-                f'">{label}</a>'
-            )
-            st.markdown(html_link, unsafe_allow_html=True)
-    
-    st.divider()
-    
-    # Validate model exists
-    if model_name not in MODELS:
-        st.error(f"❌ Model '{model_name}' not found.")
-        st.info(f"**Available models:** {', '.join(MODELS.keys())}")
-        st.markdown("**Use query params to select models:**")
-        for model_key in MODELS.keys():
-            st.code(f"?model={model_key}", language="text")
-        return
-    
-    model_config = MODELS[model_name]
-    
-    # Display model title and description
-    st.title(f"🔬 {model_config['name']}")
-    st.markdown(f"*{model_config['description']}*")
-    st.divider()
-    
-    # Render the selected model's visualization
-    try:
-        model_config["render"]()
-    except Exception as e:
-        st.error(f"❌ Error rendering {model_name} visualization")
-        st.error(f"Details: {str(e)}")
-        with st.expander("📋 See full error trace"):
-            st.code(str(e), language="text")
+            with cols[col_idx]:
+                # Card HTML structure
+                card_html = f"""
+                <a href="?model={key}" target="_self" style="text-decoration: none;">
+                    <div class="model-card">
+                        <div class="model-title">{info['name']}</div>
+                        <div class="model-desc">{info['description']}</div>
+                        <div style="margin-top: 15px; font-size: 0.8rem; color: #aaa;">
+                            Complexity: <span style="color: #FF6C6C;">{info.get('complexity', 'Unknown')}</span>
+                        </div>
+                    </div>
+                </a>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
 
 # ============ THEME SYNCHRONIZATION ============
 # This script ensures dark mode by default
-# When embedded in Blowfish (Tailwind), it will inherit parent styles
 @st.cache_resource
 def init_theme():
     """Initialize theme - dark mode by default for glass aesthetic"""

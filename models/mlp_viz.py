@@ -40,6 +40,11 @@ def render_mlp():
     """Main MLP visualization function"""
     model, checkpoint, tokenizer = load_mlp_model()
     
+    # ============ NAVIGATION ============
+    if st.button("⬅️ Back to Dashboard"):
+        st.query_params.clear()
+        st.rerun()
+    
     # ============ MODEL INFO ============
     st.markdown("### 📊 Model Architecture")
     col1, col2, col3, col4 = st.columns(4)
@@ -94,7 +99,7 @@ def render_mlp():
     with col1:
         # Hidden layer 1 weights heatmap
         st.markdown("**Hidden Layer 1 Weights Heatmap**")
-        hidden1_weights = checkpoint['model_state_dict']['hidden1.weight'].numpy()
+        hidden1_weights = checkpoint['model_state_dict']['hidden1.weight'].detach().cpu().numpy()
         
         fig_h1 = go.Figure(data=go.Heatmap(
             z=hidden1_weights,
@@ -112,7 +117,7 @@ def render_mlp():
     with col2:
         # Hidden layer 2 weights heatmap
         st.markdown("**Hidden Layer 2 Weights Heatmap**")
-        hidden2_weights = checkpoint['model_state_dict']['hidden2.weight'].numpy()
+        hidden2_weights = checkpoint['model_state_dict']['hidden2.weight'].detach().cpu().numpy()
         
         fig_h2 = go.Figure(data=go.Heatmap(
             z=hidden2_weights,
@@ -163,8 +168,9 @@ def render_mlp():
                     probs = torch.softmax(logits, dim=-1)
                     idx_next = torch.multinomial(probs, num_samples=1)
                     
+                    
                     generated.append(idx_next.item())
-                    context = torch.cat([context, idx_next.unsqueeze(0)], dim=1)
+                    context = torch.cat([context, idx_next], dim=1)
             
             # Decode
             generated_text = prompt + tokenizer.decode(generated)
@@ -198,8 +204,8 @@ def render_mlp():
             # Get top-k predictions
             top_k = 10
             top_probs, top_indices = torch.topk(probs[0], top_k)
-            top_probs = top_probs.numpy()
-            top_chars = [tokenizer.itos[idx] for idx in top_indices.numpy()]
+            top_probs = top_probs.detach().cpu().numpy()
+            top_chars = [tokenizer.itos[idx] for idx in top_indices.detach().cpu().numpy()]
             
             # Display as bar chart
             fig_pred = go.Figure(data=[

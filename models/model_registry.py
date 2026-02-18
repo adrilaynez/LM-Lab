@@ -172,3 +172,7 @@ def format_model_info(model_type):
     }
     
     return formatted
+
+def get_model_url_param(model_type):
+    """Get the URL parameter for a specific model."""
+    return f"?model={model_type}"

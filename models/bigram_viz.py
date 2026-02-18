@@ -45,6 +45,11 @@ def render_bigram():
         st.error("❌ Checkpoint not found. Train the model first.")
         st.stop()
     
+    # ============ NAVIGATION ============
+    if st.button("⬅️ Back to Dashboard"):
+        st.query_params.clear()
+        st.rerun()
+    
     # ============ MODEL INFORMATION SECTION ============
     st.subheader("Model Information")
     
@@ -122,7 +127,7 @@ def render_bigram():
     
     if 'matrix' in internals:
         weights = internals['matrix']
-        probs = torch.nn.functional.softmax(weights, dim=1).detach().numpy()
+        probs = torch.nn.functional.softmax(weights, dim=1).detach().cpu().numpy()
         
         df = pd.DataFrame(probs, index=tokenizer.chars, columns=tokenizer.chars)
         
