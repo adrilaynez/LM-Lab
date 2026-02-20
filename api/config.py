@@ -12,6 +12,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CHECKPOINT_DIR = PROJECT_ROOT / "checkpoints"
 DATA_DIR = PROJECT_ROOT / "data"
+DATA_PATH = DATA_DIR / "paul_graham.txt"
+SEED = 1337
 
 # ============ Server ============
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
@@ -27,7 +29,7 @@ _cors_raw = os.getenv(
 CORS_ORIGINS: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 
 # ============ Model Inference ============
-DEVICE = os.getenv("DEVICE", "cpu")
+DEVICE = os.getenv("DEVICE", "cuda")
 DEFAULT_TOP_K = int(os.getenv("DEFAULT_TOP_K", "10"))
 MAX_GENERATE_LENGTH = int(os.getenv("MAX_GENERATE_LENGTH", "200"))
 

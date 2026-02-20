@@ -19,9 +19,16 @@ class NGramModel(nn.Module):
         self.model_type = "ngram"
         
         # Load checkpoint
-        self.checkpoint_path = CHECKPOINT_DIR / f"ngram_n{context_size}.pt"
+        # Load checkpoint
+        # Try v1 first
+        self.checkpoint_path = CHECKPOINT_DIR / "ngram" / "v1" / f"ngram_n{context_size}.pt"
         if not self.checkpoint_path.exists():
-             raise FileNotFoundError(f"N-Gram checkpoint not found for N={context_size}. Run ngram_precompute.py first.")
+             # Fallback
+             legacy = CHECKPOINT_DIR / f"ngram_n{context_size}.pt"
+             if legacy.exists():
+                 self.checkpoint_path = legacy
+             else:
+                 raise FileNotFoundError(f"N-Gram checkpoint not found for N={context_size}. Run ngram_precompute.py first.")
         
         print(f"Loading N-Gram Model (N={context_size})...")
         data = torch.load(self.checkpoint_path, map_location=DEVICE, weights_only=False)
@@ -127,9 +134,8 @@ class NGramModel(nn.Module):
                 for idx, p in next_probs.items():
                     probs[idx] = p
             else:
-                # Unseen context (Zero probability? Or epsilon?)
-                # "Sparse data problem"
-                pass 
+                # Unseen context -> Fallback to uniform distribution
+                probs = torch.ones(self.vocab_size, device=DEVICE) / self.vocab_size 
         else:
              # Dense (Bigram / N=1) -> context is 1 char
              # ctx_tuple is (char_idx,)
@@ -144,6 +150,7 @@ class NGramModel(nn.Module):
         """
         Return internals for visualization:
         - active_slice: The specific row/transition stats for the current context.
+        - top_contexts: The global top 5 contexts.
         """
         if idx.shape[1] < self.context_size:
              # Not enough context
@@ -151,14 +158,15 @@ class NGramModel(nn.Module):
         else:
              context_tokens = idx[0, -self.context_size:].tolist()
              
-        # "Active Slice"
-        # For N=1 (Bigram): slice is vector [V]
-        # For N>1: slice is vector [V] from sparse dict
-        
+        # 1. Active Slice
         # We compute the probs again to show them
         slice_probs = self._get_probs(context_tokens)
         
+        # 2. Top Contexts (from metadata)
+        top_contexts = self.meta.get("top_contexts", [])
+        
         return {
             "active_slice": slice_probs, # Tensor [V]
-            "conditioned_on": context_tokens # List[int]
+            "conditioned_on": context_tokens, # List[int]
+            "top_contexts": top_contexts # List[dict]
         }

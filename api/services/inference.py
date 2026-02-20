@@ -35,11 +35,17 @@ def _load_model(model_id: str):
     Load a model from its checkpoint. Returns (model, tokenizer, config, training_info).
     Raises FileNotFoundError if the checkpoint does not exist.
     """
-    checkpoint_path = CHECKPOINT_DIR / f"{model_id}_checkpoint.pt"
+    # v1 is default for now. In future, we can scan for latest version.
+    checkpoint_path = CHECKPOINT_DIR / model_id / "v1" / f"{model_id}_checkpoint.pt"
     if not checkpoint_path.exists():
-        raise FileNotFoundError(
-            f"Checkpoint not found: {checkpoint_path}"
-        )
+        # Fallback to legacy path (though we moved them, just in case)
+        legacy_path = CHECKPOINT_DIR / f"{model_id}_checkpoint.pt"
+        if legacy_path.exists():
+            checkpoint_path = legacy_path
+        else:
+            raise FileNotFoundError(
+                f"Checkpoint not found: {checkpoint_path}" 
+            )
 
     checkpoint = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
     config = checkpoint["config"]
@@ -65,11 +71,17 @@ def _load_model(model_id: str):
 @lru_cache(maxsize=8)
 def _load_ngram_model(context_size: int):
     """
-    Load specific N-Gram model from precomputed checkpoint.
+    Load specific N-Gram model from precomputed checkpoint in v1 folder.
     """
     # Check if checkpoint exists
-    if not (CHECKPOINT_DIR / f"ngram_n{context_size}.pt").exists():
-        raise FileNotFoundError(f"N-Gram checkpoint for N={context_size} not found.")
+    checkpoint_path = CHECKPOINT_DIR / "ngram" / "v1" / f"ngram_n{context_size}.pt"
+    if not checkpoint_path.exists():
+         # Fallback to legacy
+         legacy_path = CHECKPOINT_DIR / f"ngram_n{context_size}.pt"
+         if legacy_path.exists():
+             checkpoint_path = legacy_path
+         else:
+            raise FileNotFoundError(f"N-Gram checkpoint for N={context_size} not found.")
 
     model = NGramModel(vocab_size=0, context_size=context_size) # vocab loaded from ckpt
     model.eval()
@@ -91,10 +103,18 @@ def _load_ngram_model(context_size: int):
 
 def get_available_model_ids() -> list[str]:
     """Return model IDs that have a checkpoint on disk."""
-    return [
-        mid for mid in MODEL_INFO
-        if (CHECKPOINT_DIR / f"{mid}_checkpoint.pt").exists()
-    ]
+    available = []
+    # Force check common model IDs
+    candidates = list(MODEL_INFO.keys())
+    for mid in candidates:
+        v1_path = CHECKPOINT_DIR / mid / "v1" / f"{mid}_checkpoint.pt"
+        if v1_path.exists():
+            available.append(mid)
+        # Check legacy
+        elif (CHECKPOINT_DIR / f"{mid}_checkpoint.pt").exists():
+            available.append(mid)
+    
+    return available
 
 
 def get_all_model_ids() -> list[str]:
@@ -107,7 +127,9 @@ def model_exists(model_id: str) -> bool:
 
 
 def checkpoint_exists(model_id: str) -> bool:
-    return (CHECKPOINT_DIR / f"{model_id}_checkpoint.pt").exists()
+    v1_path = CHECKPOINT_DIR / model_id / "v1" / f"{model_id}_checkpoint.pt"
+    legacy_path = CHECKPOINT_DIR / f"{model_id}_checkpoint.pt"
+    return v1_path.exists() or legacy_path.exists()
 
 
 def get_model_detail(model_id: str) -> dict:
@@ -480,7 +502,7 @@ from utils.data_explorer import search_dataset
 
 from api.schemas.responses import (
     NGramInferenceResponse, NGramVisualization, NGramTrainingInfo, 
-    NGramDiagnostics, ActiveSlice, ModelArchitectureInfo, 
+    NGramDiagnostics, ContextDistribution, ModelArchitectureInfo, 
     HistoricalContext, TransitionMatrix, TokenInfo, PredictionResult, InferenceMetadata
 )
 
@@ -488,7 +510,7 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
     """
     N-Gram visualization inference with educational safeguards.
     """
-    MAX_CONTEXT_SIZE = 5
+    MAX_CONTEXT_SIZE = 4
     if context_size > MAX_CONTEXT_SIZE:
         raise ValueError(f"CONTEXT_TOO_LARGE:{context_size}:{MAX_CONTEXT_SIZE}")
 
@@ -515,9 +537,12 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         
     top_probs, top_indices = torch.topk(probs, min(top_k, probs.shape[0]))
     
-    # 2. Visualization (Active Slice)
+    # 2. Visualization (Context Distributions)
     internals = model.get_internals(idx)
     
+    context_distributions = {}
+    
+    # A. Active Context (Current Input)
     context_tokens = []
     if "conditioned_on" in internals:
         c_idxs = internals["conditioned_on"]
@@ -527,55 +552,42 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         except:
             pass
     
-    # Transition Matrix / Active Slice Formatting
-    transition_matrix = None
-    active_slice = None
-    
-    if context_size == 1:
-        # For N=1 (Bigram), we might want to show the full matrix if requested,
-        # but pure N-gram view usually focuses on the active context.
-        # However, Bigram has a dedicated "Transformation Matrix" view.
-        # For uniformity, we can populate transition_matrix for N=1.
-        # But wait, N-gram UI might handle this differently.
-        # The schema allows both.
-        # If N=1, let's provide the full matrix if feasible, OR just the active slice.
-        # Given "Bigram parity", Bigram shows full matrix.
-        # Let's see if we can get it.
-        # The model has .tensor if dense.
-        if hasattr(model, 'tensor'):
-             # It's a [V, V] tensor
-             prob_matrix = model.tensor.cpu().numpy()
-             transition_matrix = {
-                "shape": list(prob_matrix.shape),
-                "data": prob_matrix.tolist(),
-                "row_labels": tokenizer.chars,
-                "col_labels": tokenizer.chars
-             }
-    
-    # Construct Active Slice (always relevant)
+    current_context_str = "".join(context_tokens)
+    if not current_context_str:
+        current_context_str = "<START>"
+        
     if "active_slice" in internals:
         slc_probs = internals["active_slice"] # Tensor [V]
-        slc_probs = slc_probs.cpu().numpy()
+        slc_probs_list = slc_probs.cpu().tolist()
         
-        matrix_data = {
-            "shape": [1, len(slc_probs)],
-            "data": [slc_probs.tolist()],
-            "row_labels": ["Ctx"], # Single row active slice
-            "col_labels": tokenizer.chars
+        context_distributions["current"] = {
+            "context": current_context_str,
+            "probabilities": slc_probs_list,
+            "row_labels": tokenizer.chars
         }
-        
-        active_slice = {
-            "context_tokens": context_tokens,
-            "matrix": matrix_data,
-            "next_token_probs": {
-                tokenizer.itos.get(i, str(i)): float(p) 
-                for i, p in enumerate(slc_probs) if p > 0.0001 # Filter zero-probs to save space? Or send all?
-                # Send all for heatmap
+
+    # B. Top Contexts (Global Frequent)
+    if "top_contexts" in internals:
+        for i, ctx_obj in enumerate(internals["top_contexts"]):
+            ctx_str = ctx_obj.get("context", "")
+            ctx_probs = ctx_obj.get("probabilities", [])
+            # Add to dict
+            key = f"top_{i+1}"
+            context_distributions[key] = {
+                "context": ctx_str,
+                "probabilities": ctx_probs,
+                "row_labels": tokenizer.chars
             }
-        }
-        # Re-populate next_token_probs with ALL for heatmap
-        active_slice["next_token_probs"] = {
-             tokenizer.itos.get(i, str(i)): float(p) for i, p in enumerate(slc_probs)
+    
+    # Transition Matrix (only for N=1, if applicable)
+    transition_matrix = None
+    if context_size == 1 and hasattr(model, 'tensor'):
+        prob_matrix = model.tensor.cpu().numpy()
+        transition_matrix = {
+            "shape": list(prob_matrix.shape),
+            "data": prob_matrix.tolist(),
+            "row_labels": tokenizer.chars,
+            "col_labels": tokenizer.chars
         }
 
     # 3. Training Stats & Diagnostics
@@ -588,7 +600,10 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         "context_space_size": model_stats.get("context_space_size"),
         "context_utilization": model_stats.get("context_utilization"),
         "sparsity": model_stats.get("sparsity"),
-        "transition_density": model_stats.get("transition_density")
+        "transition_density": model_stats.get("transition_density"),
+        "final_loss": model_stats.get("final_loss"),      # New
+        "perplexity": model_stats.get("perplexity"),      # New
+        "loss_history": model_stats.get("loss_history", []) # New
     }
 
     # Dynamic Diagnostics
@@ -598,8 +613,7 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         "context_size": context_size,
         "estimated_context_space": est_context_space,
         "sparsity": model_stats.get("sparsity"),
-        "observed_contexts": model_stats.get("unique_contexts"),
-        "context_utilization": model_stats.get("context_utilization")
+        "perplexity": model_stats.get("perplexity")
     }
     
     # 4. Architecture Info
@@ -662,7 +676,7 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         "full_distribution": full_dist,
         "visualization": {
             "transition_matrix": transition_matrix,
-            "active_slice": active_slice,
+            "context_distributions": context_distributions, # New
             "training": training,
             "diagnostics": diagnostics,
             "architecture": architecture,
@@ -694,7 +708,7 @@ def ngram_predict_stepwise(text: str, context_size: int, steps: int = 3, top_k: 
     Generalized version of bigram_predict_stepwise for context_size = N.
     Returns a dict matching NGramStepwisePredictionResponse schema.
     """
-    MAX_CONTEXT_SIZE = 5
+    MAX_CONTEXT_SIZE = 4
     if context_size > MAX_CONTEXT_SIZE:
         raise ValueError(f"CONTEXT_TOO_LARGE:{context_size}:{MAX_CONTEXT_SIZE}")
 
@@ -848,3 +862,131 @@ def ngram_generate(start_text: str, context_size: int, num_tokens: int = 100, te
         },
     }
 
+# --------------------------------------------------------------------------- #
+#  MLP-Specific Inference
+# --------------------------------------------------------------------------- #
+
+@lru_cache(maxsize=16)
+def _load_mlp_checkpoint(emb_dim: int, hidden_size: int, lr: float, steps: int):
+    """
+    Load a specific MLP checkpoint from the precomputed grid.
+    """
+    fname = f"mlp_E{emb_dim}_H{hidden_size}_LR{lr}_S{steps}.pt"
+    checkpoint_path = CHECKPOINT_DIR / "mlp" / fname
+    
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"MLP checkpoint not found: {fname}")
+        
+    checkpoint = torch.load(checkpoint_path, map_location=DEVICE, weights_only=False)
+    config = checkpoint["config"]
+    
+    # Reconstruct tokenizer
+    tokenizer = CharTokenizer()
+    tokenizer.chars = checkpoint["interpretability"]["vocab"]
+    tokenizer.stoi = {ch: i for i, ch in enumerate(tokenizer.chars)}
+    tokenizer.itos = {i: ch for i, ch in enumerate(tokenizer.chars)}
+    tokenizer.vocab_size = len(tokenizer.chars)
+    
+    # Instantiate model
+    from models.mlp import MLPModel
+    model = MLPModel(
+        vocab_size=tokenizer.vocab_size,
+        context_size=config["context_size"],
+        emb_dim=config["emb_dim"],
+        hidden_size=config["hidden_size"]
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    model.to(DEVICE)
+    
+    return model, tokenizer, checkpoint
+
+def run_mlp_inference(text: str, emb_dim: int, hidden_size: int, lr: float, steps: int, top_k: int = 10) -> dict:
+    """
+    MLP inference with full interpretability metadata from the grid.
+    """
+    try:
+        model, tokenizer, checkpoint = _load_mlp_checkpoint(emb_dim, hidden_size, lr, steps)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+        
+    t0 = time.perf_counter()
+    
+    # 1. Prediction
+    encoded = tokenizer.encode(text)
+    context_size = model.context_size
+    if len(encoded) < context_size:
+        encoded_padded = [0] * (context_size - len(encoded)) + encoded
+    else:
+        encoded_padded = encoded[-context_size:]
+        
+    idx = torch.tensor([encoded_padded], dtype=torch.long, device=DEVICE)
+    
+    with torch.no_grad():
+        logits, _ = model(idx)
+        last_logits = logits[0] # MLP usually outputs [1, V]
+        probs = F.softmax(last_logits, dim=-1)
+        
+    top_probs, top_indices = torch.topk(probs, min(top_k, probs.shape[0]))
+    
+    predictions = [
+        {"token": tokenizer.decode([i.item()]), "probability": round(p.item(), 6)}
+        for p, i in zip(top_probs, top_indices)
+    ]
+    
+    # 2. Visualization Metadata
+    metrics = checkpoint["metrics"]
+    interpretability = checkpoint["interpretability"]
+    
+    visualization = {
+        "embedding_matrix": interpretability["embedding_matrix"],
+        "loss_history": metrics["loss_history"],
+        "dead_neurons_history": metrics["dead_neurons_history"],
+        "activation_stats_history": metrics.get("activation_stats_history", []),
+        "grad_norm_history": metrics["grad_norm_history"],
+        "training_metadata": {
+            "train_time_sec": metrics["train_time_sec"],
+            "initial_loss": metrics.get("initial_loss"),
+            "final_loss": metrics["final_loss"],
+        },
+        "expected_uniform_loss": metrics.get("expected_uniform_loss", 0.0),
+        "token_frequency_distribution": metrics.get("token_frequency_distribution", []),
+        "architecture": {
+            "name": "Multi-Layer Perceptron",
+            "description": "A feed-forward neural network with one hidden layer.",
+            "type": "Neural Network",
+            "complexity": "Medium",
+            "how_it_works": [
+                "1. Characters are converted into dense embedding vectors.",
+                "2. Embeddings are concatenated to form a context vector.",
+                "3. The context vector passes through a hidden layer with Tanh activation.",
+                "4. The output layer produces logits for the next character prediction."
+            ],
+            "strengths": ["Learns distributed representations (embeddings)", "Can capture more complex patterns than N-grams"],
+            "limitations": ["Fixed context window", "Prone to saturated neurons (vanishing gradients) if not initialized properly"]
+        },
+        "historical_context": {
+            "description": "Bengio's 2003 MLP was a breakthrough in overcoming the 'Curse of Dimensionality' in N-gram models.",
+            "limitations": ["Small context window", "Lack of sequence memory"],
+            "modern_evolution": "Led directly to Recurrent Neural Networks (RNNs) and eventually Transformers."
+        }
+    }
+    
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+    
+    return {
+        "model_id": "mlp",
+        "model_name": "MLP",
+        "config": checkpoint["config"],
+        "input": {
+            "text": text,
+            "token_ids": encoded
+        },
+        "predictions": predictions,
+        "visualization": visualization,
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": str(DEVICE),
+            "vocab_size": tokenizer.vocab_size,
+        }
+    }

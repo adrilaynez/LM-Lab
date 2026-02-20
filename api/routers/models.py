@@ -32,6 +32,7 @@ from api.schemas.responses import (
     DatasetLookupResponse,
     NGramStepwisePredictionResponse,
     NGramGenerationResponse,
+    MLPInferenceResponse,
 )
 from api.services import inference
 from api.services.serializer import serialize_internals
@@ -64,6 +65,38 @@ async def list_models():
         )
 
     return ModelListResponse(models=summaries, total=len(summaries))
+
+
+@router.get("/mlp", response_model=MLPInferenceResponse)
+async def get_mlp_inference(
+    text: str = "hello",
+    emb_dim: int = 16,
+    hidden_size: int = 200,
+    learning_rate: float = 0.1,
+    steps: int = 5000,
+    top_k: int = 10
+):
+    """
+    MLP-specific visualization endpoint.
+    Loads a specific precomputed model from the grid.
+    """
+    try:
+        result = inference.run_mlp_inference(
+            text=text,
+            emb_dim=emb_dim,
+            hidden_size=hidden_size,
+            lr=learning_rate,
+            steps=steps,
+            top_k=top_k
+        )
+        return result
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "MLP_INFERENCE_ERROR", "message": str(e)}
+        )
 
 
 @router.get("/{model_id}", response_model=ModelDetailResponse)
@@ -349,6 +382,7 @@ async def ngram_generate(body: NGramGenerateRequest):
         )
 
     return NGramGenerationResponse(**result)
+
 
 
 # --------------------------------------------------------------------------- #

@@ -22,6 +22,5 @@ from .responses import (
     BigramStepwisePredictionResponse,
     StepwisePredictionStep,
     NGramInferenceResponse,
-    ActiveSlice,
     DatasetLookupResponse,
 )

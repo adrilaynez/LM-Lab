@@ -222,31 +222,36 @@ class NGramDiagnostics(BaseModel):
     vocab_size: int
     context_size: int
     estimated_context_space: int  # V^(context_size)
-    sparsity: float | None = None  # Optional
+    sparsity: float | None = None  # Observed sparsity
+    perplexity: float | None = None  # New metric
 
 
-class ActiveSlice(BaseModel):
-    """Visualization of the active slice of the N-gram tensor."""
-    context_tokens: list[str]
-    matrix: TransitionMatrix
-    next_token_probs: dict[str, float]
+class ContextDistribution(BaseModel):
+    """Probability distribution for a specific context."""
+    context: str
+    probabilities: list[float]  # Full vocab distribution
+    row_labels: list[str] | None = None  # Optional labels if not global
 
 
 class NGramTrainingInfo(BaseModel):
-    """Training statistics for N-Gram models (hydrated from checkpoint)."""
+    """Training statistics for N-Gram models."""
     total_tokens: int | None = None
     unique_chars: int | None = None
     unique_contexts: int | None = None
     context_space_size: int | None = None
-    context_utilization: float | None = None  # unique_contexts / context_space
-    sparsity: float | None = None             # 1 - (nonzero / potential)
-    transition_density: float | None = None   # avg transitions per context
+    context_utilization: float | None = None
+    sparsity: float | None = None
+    transition_density: float | None = None
+    loss_history: list[float] = []      # New
+    final_loss: float | None = None     # New
+    perplexity: float | None = None     # New
 
 
 class NGramVisualization(BaseModel):
     """Visualization-ready data for N-Gram models."""
     transition_matrix: TransitionMatrix | None = None  # For N=1
-    active_slice: ActiveSlice | None = None            # For N>1
+    # active_slice: ActiveSlice | None = None          # Deprecated/Legacy
+    context_distributions: dict[str, ContextDistribution] | None = None # New structure
     training: NGramTrainingInfo
     diagnostics: NGramDiagnostics
     architecture: ModelArchitectureInfo
@@ -306,4 +311,32 @@ class NGramGenerationResponse(BaseModel):
     length: int
     temperature: float
     start_text: str
+    metadata: InferenceMetadata
+# ============ MLP-Specific Visualization ============
+
+class MLPActivationStats(BaseModel):
+    mean: float
+    std: float
+
+class MLPVisualization(BaseModel):
+    """All visualization-ready data for the MLP model."""
+    embedding_matrix: list[list[float]] # [vocab_size, emb_dim]
+    loss_history: list[float]
+    dead_neurons_history: list[float]
+    activation_stats_history: list[MLPActivationStats]
+    grad_norm_history: list[float]
+    training_metadata: dict
+    expected_uniform_loss: float
+    token_frequency_distribution: list[float]
+    architecture: ModelArchitectureInfo
+    historical_context: HistoricalContext
+
+class MLPInferenceResponse(BaseModel):
+    """Full MLP inference result: predictions + visualization data."""
+    model_id: str
+    model_name: str
+    config: dict
+    input: TokenInfo
+    predictions: list[PredictionResult]
+    visualization: MLPVisualization
     metadata: InferenceMetadata

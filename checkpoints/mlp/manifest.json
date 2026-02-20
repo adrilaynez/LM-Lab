@@ -1,0 +1,392 @@
+[
+  {
+    "filename": "mlp_E2_H200_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 2,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.4584479331970215,
+      "train_time": 36.630916357040405
+    }
+  },
+  {
+    "filename": "mlp_E3_H200_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 3,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.4385318756103516,
+      "train_time": 28.895676374435425
+    }
+  },
+  {
+    "filename": "mlp_E6_H200_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 6,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.303668260574341,
+      "train_time": 18.83579969406128
+    }
+  },
+  {
+    "filename": "mlp_E10_H200_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 10,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.173969030380249,
+      "train_time": 14.62847375869751
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.2372686862945557,
+      "train_time": 18.62547755241394
+    }
+  },
+  {
+    "filename": "mlp_E32_H200_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 32,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.0922718048095703,
+      "train_time": 17.42241144180298
+    }
+  },
+  {
+    "filename": "mlp_E16_H32_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 32,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.289142608642578,
+      "train_time": 19.920487880706787
+    }
+  },
+  {
+    "filename": "mlp_E16_H64_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 64,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.157836437225342,
+      "train_time": 21.853939056396484
+    }
+  },
+  {
+    "filename": "mlp_E16_H128_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 128,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.2128796577453613,
+      "train_time": 49.77834677696228
+    }
+  },
+  {
+    "filename": "mlp_E16_H256_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 256,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.2239677906036377,
+      "train_time": 52.40827178955078
+    }
+  },
+  {
+    "filename": "mlp_E16_H512_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 512,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.1919569969177246,
+      "train_time": 58.55096364021301
+    }
+  },
+  {
+    "filename": "mlp_E16_H1024_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 1024,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.3381364345550537,
+      "train_time": 25.4719398021698
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.2_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.2,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.2745747566223145,
+      "train_time": 17.522178649902344
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.05_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.05,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.2722911834716797,
+      "train_time": 13.597607135772705
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.01_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.01,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.6110455989837646,
+      "train_time": 13.913004398345947
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.005_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.005,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.806058406829834,
+      "train_time": 59.923704624176025
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.001_S5000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.001,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 3.3868165016174316,
+      "train_time": 14.17000126838684
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.1_S1000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 1000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.4407427310943604,
+      "train_time": 2.9524481296539307
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.1_S10000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 10000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.0962467193603516,
+      "train_time": 62.07091760635376
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.1_S20000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 20000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.0323991775512695,
+      "train_time": 57.8072464466095
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.1_S30000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 30000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.0056631565093994,
+      "train_time": 95.7134575843811
+    }
+  },
+  {
+    "filename": "mlp_E16_H200_LR0.1_S50000.pt",
+    "config": {
+      "emb_dim": 16,
+      "hidden_size": 200,
+      "learning_rate": 0.1,
+      "steps": 50000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 1.9330722093582153,
+      "train_time": 234.6262662410736
+    }
+  },
+  {
+    "filename": "mlp_E2_H32_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 2,
+      "hidden_size": 32,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.6151387691497803,
+      "train_time": 14.632956743240356
+    }
+  },
+  {
+    "filename": "mlp_E2_H1024_LR0.1_S5000.pt",
+    "config": {
+      "emb_dim": 2,
+      "hidden_size": 1024,
+      "learning_rate": 0.1,
+      "steps": 5000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.750927686691284,
+      "train_time": 31.14221453666687
+    }
+  },
+  {
+    "filename": "mlp_E32_H32_LR0.1_S30000.pt",
+    "config": {
+      "emb_dim": 32,
+      "hidden_size": 32,
+      "learning_rate": 0.1,
+      "steps": 30000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.1083877086639404,
+      "train_time": 111.24101996421814
+    }
+  },
+  {
+    "filename": "mlp_E32_H1024_LR0.2_S20000.pt",
+    "config": {
+      "emb_dim": 32,
+      "hidden_size": 1024,
+      "learning_rate": 0.2,
+      "steps": 20000,
+      "batch_size": 32,
+      "context_size": 3
+    },
+    "metrics": {
+      "final_loss": 2.2082512378692627,
+      "train_time": 136.33377146720886
+    }
+  }
+]
