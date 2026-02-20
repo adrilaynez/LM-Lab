@@ -340,3 +340,85 @@ class MLPInferenceResponse(BaseModel):
     predictions: list[PredictionResult]
     visualization: MLPVisualization
     metadata: InferenceMetadata
+
+
+# ============ MLP Grid (Model Zoo) ============
+
+class MLPGridConfigSummary(BaseModel):
+    """Summary of a single trained MLP configuration from the grid."""
+    embedding_dim: int
+    hidden_size: int
+    learning_rate: float
+    context_size: int
+    batch_size: int | None = None
+    final_loss: float
+    perplexity: float
+    initial_loss: float | None = None
+    train_time_sec: float | None = None
+    total_parameters: int | None = None
+    snapshot_steps: list[str] = []
+    filename: str
+
+
+class MLPGridListResponse(BaseModel):
+    """Response listing all available MLP grid configurations."""
+    configurations: list[MLPGridConfigSummary]
+    total: int
+
+
+class MLPGridPredictResponse(BaseModel):
+    """Next-token prediction for a specific MLP grid configuration."""
+    model_id: str
+    config: dict
+    input: TokenInfo
+    predictions: list[PredictionResult]
+    full_distribution: list[float] | None = None
+    metadata: InferenceMetadata
+
+
+class MLPGridGenerateResponse(BaseModel):
+    """Text generation result for a specific MLP grid configuration."""
+    model_id: str
+    config: dict
+    generated_text: str
+    seed_text: str
+    temperature: float
+    length: int
+    metadata: InferenceMetadata
+
+
+class MLPGridTimelineResponse(BaseModel):
+    """Training snapshot timeline for a specific MLP grid configuration."""
+    model_id: str
+    config: dict
+    metrics_log: dict
+    snapshots: dict
+    metadata: dict
+
+
+class MLPGridEmbeddingResponse(BaseModel):
+    """Embedding matrix for a specific MLP grid configuration."""
+    model_id: str
+    config: dict
+    embedding_matrix: list[list[float]]
+    vocab: list[str]
+    shape: list[int]
+    snapshot_step: str
+
+
+class MLPGridInternalsResponse(BaseModel):
+    """Internal activations for a specific MLP grid configuration."""
+    model_id: str
+    config: dict
+    input: TokenInfo
+    predictions: list[PredictionResult]
+    internals: dict
+    metadata: InferenceMetadata
+
+
+class MLPGridEmbeddingQualityResponse(BaseModel):
+    """Embedding quality metrics for a specific MLP grid configuration."""
+    model_id: str
+    config: dict
+    metrics: dict
+    snapshot_step: str

@@ -22,7 +22,7 @@ from api.config import (
     API_VERSION,
 
 )
-from api.routers import health, meta, models
+from api.routers import health, meta, models, mlp_grid
 
 
 # --------------------------------------------------------------------------- #
@@ -88,9 +88,10 @@ app.add_middleware(
 )
 
 # Mount routers under /api/v1
-app.include_router(health.router, prefix="/api/v1")
-app.include_router(meta.router,   prefix="/api/v1")
-app.include_router(models.router,  prefix="/api/v1")
+app.include_router(health.router,    prefix="/api/v1")
+app.include_router(meta.router,      prefix="/api/v1")
+app.include_router(mlp_grid.router,  prefix="/api/v1")
+app.include_router(models.router,    prefix="/api/v1")
 
 
 # Root redirect to docs

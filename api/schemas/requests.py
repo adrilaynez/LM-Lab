@@ -183,3 +183,49 @@ class NGramGenerateRequest(BaseModel):
         le=2.0,
         description="Sampling temperature (lower = more deterministic)",
     )
+
+
+# ============ MLP Grid Requests ============
+
+class MLPGridPredictRequest(BaseModel):
+    """Input for MLP grid next-token prediction."""
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Input text to feed into the model",
+        examples=["hello"],
+    )
+    embedding_dim: int = Field(..., ge=1, description="Embedding dimension", examples=[10])
+    hidden_size: int = Field(..., ge=1, description="Hidden layer size", examples=[128])
+    learning_rate: float = Field(..., gt=0.0, description="Learning rate used during training", examples=[0.1])
+    top_k: int = Field(default=10, ge=1, le=65, description="Number of top predictions to return")
+
+
+class MLPGridGenerateRequest(BaseModel):
+    """Input for MLP grid text generation."""
+    embedding_dim: int = Field(..., ge=1, description="Embedding dimension", examples=[10])
+    hidden_size: int = Field(..., ge=1, description="Hidden layer size", examples=[128])
+    learning_rate: float = Field(..., gt=0.0, description="Learning rate used during training", examples=[0.1])
+    seed_text: str = Field(
+        default="The ",
+        max_length=200,
+        description="Seed text to start generation from",
+    )
+    max_tokens: int = Field(default=100, ge=1, le=500, description="Maximum tokens to generate")
+    temperature: float = Field(default=1.0, gt=0.0, le=2.0, description="Sampling temperature")
+
+
+class MLPGridInternalsRequest(BaseModel):
+    """Input for MLP grid internals inspection."""
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=500,
+        description="Input text to feed into the model",
+        examples=["hello"],
+    )
+    embedding_dim: int = Field(..., ge=1, description="Embedding dimension", examples=[10])
+    hidden_size: int = Field(..., ge=1, description="Hidden layer size", examples=[128])
+    learning_rate: float = Field(..., gt=0.0, description="Learning rate used during training", examples=[0.1])
+    top_k: int = Field(default=10, ge=1, le=65, description="Number of top predictions to return")

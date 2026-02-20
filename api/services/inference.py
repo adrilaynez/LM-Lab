@@ -990,3 +990,433 @@ def run_mlp_inference(text: str, emb_dim: int, hidden_size: int, lr: float, step
             "vocab_size": tokenizer.vocab_size,
         }
     }
+
+
+# --------------------------------------------------------------------------- #
+#  MLP Grid (Model Zoo) — 108 precomputed configurations
+# --------------------------------------------------------------------------- #
+
+import math
+import re
+
+_MLP_GRID_DIR = CHECKPOINT_DIR / "mlp_grid"
+_MLP_GRID_FILENAME_RE = re.compile(
+    r"^mlp_E(\d+)_H(\d+)_LR([\d.]+)\.pt$"
+)
+
+
+def _mlp_grid_id(emb_dim: int, hidden_size: int, lr: float) -> str:
+    return f"mlp_grid_E{emb_dim}_H{hidden_size}_LR{lr}"
+
+
+def _mlp_grid_filename(emb_dim: int, hidden_size: int, lr: float) -> str:
+    return f"mlp_E{emb_dim}_H{hidden_size}_LR{lr}.pt"
+
+
+@lru_cache(maxsize=1)
+def list_mlp_grid_configurations() -> list[dict]:
+    """
+    Scan checkpoints/mlp_grid/ and return metadata for each configuration.
+    Uses lightweight partial loading: only config + metadata, no model weights.
+    """
+    configs = []
+    if not _MLP_GRID_DIR.exists():
+        return configs
+
+    for path in sorted(_MLP_GRID_DIR.glob("mlp_E*_H*_LR*.pt")):
+        m = _MLP_GRID_FILENAME_RE.match(path.name)
+        if not m:
+            continue
+
+        try:
+            ck = torch.load(path, map_location="cpu", weights_only=False)
+        except Exception:
+            continue
+
+        cfg = ck.get("config", {})
+        meta = ck.get("metadata", {})
+        snapshots = ck.get("snapshots", {})
+
+        # Get final loss from the last snapshot
+        sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
+        final_loss = None
+        if sorted_steps:
+            last_snap = snapshots[sorted_steps[-1]]
+            final_loss = last_snap.get("metrics", {}).get("train_loss")
+        if final_loss is None:
+            final_loss = meta.get("initial_loss", 0.0)
+
+        model_stats = meta.get("model_stats", {})
+
+        configs.append({
+            "embedding_dim": cfg.get("emb_dim", 0),
+            "hidden_size": cfg.get("hidden_size", 0),
+            "learning_rate": cfg.get("learning_rate", 0.0),
+            "context_size": cfg.get("context_size", 3),
+            "batch_size": cfg.get("batch_size"),
+            "final_loss": round(final_loss, 6),
+            "perplexity": round(math.exp(final_loss), 4),
+            "initial_loss": meta.get("initial_loss"),
+            "train_time_sec": meta.get("train_time_sec"),
+            "total_parameters": model_stats.get("total_parameters"),
+            "snapshot_steps": sorted_steps,
+            "filename": path.name,
+        })
+
+    return configs
+
+
+@lru_cache(maxsize=16)
+def _load_mlp_grid_checkpoint_raw(emb_dim: int, hidden_size: int, lr: float):
+    """
+    Load a raw mlp_grid checkpoint dict (cached). Does NOT instantiate a model.
+    """
+    fname = _mlp_grid_filename(emb_dim, hidden_size, lr)
+    path = _MLP_GRID_DIR / fname
+    if not path.exists():
+        raise FileNotFoundError(f"MLP grid checkpoint not found: {fname}")
+    return torch.load(path, map_location=DEVICE, weights_only=False)
+
+
+@lru_cache(maxsize=8)
+def _load_mlp_grid_model(emb_dim: int, hidden_size: int, lr: float):
+    """
+    Load an MLP model + tokenizer from the mlp_grid checkpoint (final snapshot).
+    Returns (model, tokenizer, checkpoint_dict).
+    """
+    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+    meta = ck.get("metadata", {})
+    vocab = meta.get("vocab", [])
+
+    # Reconstruct tokenizer
+    tokenizer = CharTokenizer()
+    tokenizer.chars = vocab
+    tokenizer.stoi = {ch: i for i, ch in enumerate(vocab)}
+    tokenizer.itos = {i: ch for i, ch in enumerate(vocab)}
+    tokenizer.vocab_size = len(vocab)
+
+    # Find the last snapshot with model_state_dict
+    snapshots = ck.get("snapshots", {})
+    sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
+    if not sorted_steps:
+        raise FileNotFoundError(f"No snapshots in checkpoint for E{emb_dim}_H{hidden_size}_LR{lr}")
+
+    last_snap = snapshots[sorted_steps[-1]]
+
+    from models.mlp import MLPModel
+    model = MLPModel(
+        vocab_size=tokenizer.vocab_size,
+        context_size=cfg.get("context_size", 3),
+        emb_dim=cfg["emb_dim"],
+        hidden_size=cfg["hidden_size"],
+    )
+    model.load_state_dict(last_snap["model_state_dict"])
+    model.eval()
+    model.to(DEVICE)
+
+    return model, tokenizer, ck
+
+
+def mlp_grid_predict(text: str, emb_dim: int, hidden_size: int, lr: float, top_k: int = 10) -> dict:
+    """
+    Next-token prediction for a specific MLP grid configuration.
+    """
+    model, tokenizer, ck = _load_mlp_grid_model(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+    context_size = cfg.get("context_size", 3)
+
+    t0 = time.perf_counter()
+
+    encoded = tokenizer.encode(text)
+    if len(encoded) < context_size:
+        encoded_padded = [0] * (context_size - len(encoded)) + encoded
+    else:
+        encoded_padded = encoded[-context_size:]
+
+    idx = torch.tensor([encoded_padded], dtype=torch.long, device=DEVICE)
+
+    with torch.no_grad():
+        logits, _ = model(idx)
+        last_logits = logits[0]
+        probs = F.softmax(last_logits, dim=-1)
+
+    top_probs, top_indices = torch.topk(probs, min(top_k, probs.shape[0]))
+
+    predictions = [
+        {"token": tokenizer.decode([i.item()]), "probability": round(p.item(), 6)}
+        for p, i in zip(top_probs, top_indices)
+    ]
+    full_dist = probs.cpu().tolist()
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    return {
+        "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+        "config": cfg,
+        "input": {"text": text, "token_ids": encoded},
+        "predictions": predictions,
+        "full_distribution": full_dist,
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": str(DEVICE),
+            "vocab_size": tokenizer.vocab_size,
+        },
+    }
+
+
+def mlp_grid_generate(emb_dim: int, hidden_size: int, lr: float,
+                       seed_text: str = "", max_tokens: int = 100,
+                       temperature: float = 1.0) -> dict:
+    """
+    Text generation using a specific MLP grid configuration.
+    Reuses the existing MLPModel.generate() method.
+    """
+    model, tokenizer, ck = _load_mlp_grid_model(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+
+    t0 = time.perf_counter()
+
+    if seed_text:
+        encoded = tokenizer.encode(seed_text)
+    else:
+        encoded = [0]
+
+    idx = torch.tensor([encoded], dtype=torch.long, device=DEVICE)
+
+    with torch.no_grad():
+        context_size = cfg.get("context_size", 3)
+        for _ in range(max_tokens):
+            idx_cond = idx[:, -context_size:]
+            logits, _ = model(idx_cond)
+            last_logits = logits[0] / temperature
+            probs = F.softmax(last_logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+            idx = torch.cat([idx, idx_next.unsqueeze(0) if idx_next.ndim == 1 else idx_next], dim=1)
+
+    generated_text = tokenizer.decode(idx[0].tolist())
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    return {
+        "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+        "config": cfg,
+        "generated_text": generated_text,
+        "seed_text": seed_text,
+        "temperature": temperature,
+        "length": len(generated_text),
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": str(DEVICE),
+            "vocab_size": tokenizer.vocab_size,
+        },
+    }
+
+
+def mlp_grid_training_timeline(emb_dim: int, hidden_size: int, lr: float) -> dict:
+    """
+    Return the full training timeline from stored snapshot data.
+    No recomputation — purely reads metrics_log and per-snapshot metrics.
+    """
+    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+    meta = ck.get("metadata", {})
+    metrics_log = ck.get("metrics_log", {})
+    snapshots = ck.get("snapshots", {})
+
+    sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
+
+    snapshot_summaries = {}
+    for step_key in sorted_steps:
+        snap = snapshots[step_key]
+        snap_metrics = snap.get("metrics", {})
+        snapshot_summaries[step_key] = {
+            "step": snap.get("step", 0),
+            "train_loss": snap_metrics.get("train_loss"),
+            "val_loss": snap_metrics.get("val_loss"),
+            "dead_neurons": snap_metrics.get("dead_neurons"),
+            "activation_stats": snap_metrics.get("activation_stats"),
+            "weight_stats": snap_metrics.get("weight_stats"),
+            "grad_norms": snap_metrics.get("grad_norms"),
+            "grad_health": snap_metrics.get("grad_health"),
+            "generalization_gap": snap_metrics.get("generalization_gap"),
+            "samples": snap_metrics.get("samples", []),
+        }
+
+    return {
+        "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+        "config": cfg,
+        "metrics_log": {
+            "train_loss": metrics_log.get("train_loss", []),
+            "val_loss": metrics_log.get("val_loss", []),
+            "grad_norms": metrics_log.get("grad_norms", []),
+            "dead_neurons": metrics_log.get("dead_neurons", []),
+        },
+        "snapshots": snapshot_summaries,
+        "metadata": {
+            "initial_loss": meta.get("initial_loss"),
+            "expected_uniform_loss": meta.get("expected_uniform_loss"),
+            "train_time_sec": meta.get("train_time_sec"),
+            "total_snapshots": len(sorted_steps),
+            "snapshot_steps": sorted_steps,
+        },
+    }
+
+
+def mlp_grid_embedding(emb_dim: int, hidden_size: int, lr: float,
+                        snapshot_step: str | None = None) -> dict:
+    """
+    Return the embedding matrix for a specific configuration and snapshot.
+    Uses stored interpretability data — no recomputation.
+    """
+    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+    meta = ck.get("metadata", {})
+    vocab = meta.get("vocab", [])
+    snapshots = ck.get("snapshots", {})
+
+    sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
+
+    if snapshot_step is None:
+        snapshot_step = sorted_steps[-1] if sorted_steps else "step_0"
+
+    if snapshot_step not in snapshots:
+        raise FileNotFoundError(
+            f"Snapshot '{snapshot_step}' not found. Available: {sorted_steps}"
+        )
+
+    interp = snapshots[snapshot_step].get("interpretability", {})
+    emb_matrix = interp.get("embedding_matrix", [])
+
+    # Convert tensor to list if needed
+    if hasattr(emb_matrix, "tolist"):
+        emb_matrix = emb_matrix.tolist()
+
+    shape = [len(emb_matrix), len(emb_matrix[0])] if emb_matrix else [0, 0]
+
+    return {
+        "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+        "config": cfg,
+        "embedding_matrix": emb_matrix,
+        "vocab": vocab,
+        "shape": shape,
+        "snapshot_step": snapshot_step,
+    }
+
+
+def mlp_grid_internals(text: str, emb_dim: int, hidden_size: int, lr: float,
+                        top_k: int = 10) -> dict:
+    """
+    Run forward pass + get_internals() for a specific MLP grid config.
+    Reuses existing MLPModel.get_internals().
+    """
+    model, tokenizer, ck = _load_mlp_grid_model(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+    context_size = cfg.get("context_size", 3)
+
+    t0 = time.perf_counter()
+
+    encoded = tokenizer.encode(text)
+    if len(encoded) < context_size:
+        encoded_padded = [0] * (context_size - len(encoded)) + encoded
+    else:
+        encoded_padded = encoded[-context_size:]
+
+    idx = torch.tensor([encoded_padded], dtype=torch.long, device=DEVICE)
+
+    with torch.no_grad():
+        logits, _ = model(idx)
+        raw_internals = model.get_internals(idx)
+
+    last_logits = logits[0]
+    probs = F.softmax(last_logits, dim=-1)
+    top_probs, top_indices = torch.topk(probs, min(top_k, probs.shape[0]))
+
+    predictions = [
+        {"token": tokenizer.decode([i.item()]), "probability": round(p.item(), 6)}
+        for p, i in zip(top_probs, top_indices)
+    ]
+
+    # Serialize tensors in internals to JSON-safe format
+    from api.services.serializer import serialize_internals
+    serialized = serialize_internals(raw_internals)
+
+    # Also include non-tensor data that serialize_internals skips
+    for k, v in raw_internals.items():
+        if k not in serialized and not isinstance(v, torch.Tensor):
+            serialized[k] = v
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000
+
+    return {
+        "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+        "config": cfg,
+        "input": {"text": text, "token_ids": encoded},
+        "predictions": predictions,
+        "internals": serialized,
+        "metadata": {
+            "inference_time_ms": round(elapsed_ms, 2),
+            "device": str(DEVICE),
+            "vocab_size": tokenizer.vocab_size,
+        },
+    }
+
+
+def mlp_grid_embedding_quality(emb_dim: int, hidden_size: int, lr: float,
+                                snapshot_step: str | None = None) -> dict:
+    """
+    Return embedding quality metrics using MLPModel.get_embedding_quality_metrics().
+    Loads the model at the requested snapshot (defaults to final).
+    """
+    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
+    cfg = ck["config"]
+    meta = ck.get("metadata", {})
+    vocab = meta.get("vocab", [])
+    snapshots = ck.get("snapshots", {})
+
+    sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
+
+    if snapshot_step is None:
+        snapshot_step = sorted_steps[-1] if sorted_steps else "step_0"
+
+    if snapshot_step not in snapshots:
+        raise FileNotFoundError(
+            f"Snapshot '{snapshot_step}' not found. Available: {sorted_steps}"
+        )
+
+    snap = snapshots[snapshot_step]
+
+    # Check if pre-computed embedding_quality metrics exist in snapshot
+    snap_metrics = snap.get("metrics", {})
+    if "embedding_quality" in snap_metrics:
+        return {
+            "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+            "config": cfg,
+            "metrics": snap_metrics["embedding_quality"],
+            "snapshot_step": snapshot_step,
+        }
+
+    # Fallback: instantiate model and compute live
+    tokenizer = CharTokenizer()
+    tokenizer.chars = vocab
+    tokenizer.stoi = {ch: i for i, ch in enumerate(vocab)}
+    tokenizer.itos = {i: ch for i, ch in enumerate(vocab)}
+    tokenizer.vocab_size = len(vocab)
+
+    from models.mlp import MLPModel
+    model = MLPModel(
+        vocab_size=tokenizer.vocab_size,
+        context_size=cfg.get("context_size", 3),
+        emb_dim=cfg["emb_dim"],
+        hidden_size=cfg["hidden_size"],
+    )
+    model.load_state_dict(snap["model_state_dict"])
+    model.eval()
+
+    metrics = model.get_embedding_quality_metrics(tokenizer=tokenizer)
+
+    return {
+        "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+        "config": cfg,
+        "metrics": metrics,
+        "snapshot_step": snapshot_step,
+    }
