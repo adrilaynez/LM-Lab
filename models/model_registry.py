@@ -143,7 +143,7 @@ MODEL_INFO = {
     },
     'ngram': {
         'name': 'N-Gram Model',
-        'description': 'Generalization of Bigram to N-token context windows (N=1..4).',
+        'description': 'Generalization of Bigram to N-token context windows.',
         'type': 'Statistical',
         'complexity': 'Low-Medium',
         'parameters': 'vocab_size^(N+1)',
