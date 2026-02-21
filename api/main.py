@@ -22,7 +22,7 @@ from api.config import (
     API_VERSION,
 
 )
-from api.routers import health, meta, models, mlp_grid
+from api.routers import health, meta, mlp_grid, models
 
 
 # --------------------------------------------------------------------------- #
@@ -38,9 +38,9 @@ async def lifespan(app: FastAPI):
     for model_id in available:
         try:
             _load_model(model_id)
-            print(f"  ✅ Pre-loaded model: {model_id}")
+            print(f"  [OK] Pre-loaded model: {model_id}")
         except Exception as e:
-            print(f"  ⚠️  Failed to pre-load {model_id}: {e}")
+            print(f"  [ERROR] Failed to pre-load {model_id}: {e}")
 
     # Pre-load N-Gram models (N=1..5)
     from api.services.inference import _load_ngram_model
@@ -48,13 +48,13 @@ async def lifespan(app: FastAPI):
     for n in range(1, 6):
         try:
             _load_ngram_model(n)
-            print(f"  ✅ Pre-loaded NGram-N{n}")
+            print(f"  [OK] Pre-loaded NGram-N{n}")
         except Exception as e:
-            print(f"  ⚠️  Failed to pre-load NGram-N{n}: {e}")
+            print(f"  [ERROR] Failed to pre-load NGram-N{n}: {e}")
 
-    print(f"\n🚀 LM-Lab API ready — {len(available)} model(s) loaded\n")
+    print(f"\n[STARTUP] LM-Lab API ready - {len(available)} model(s) loaded\n")
     yield  # App runs
-    print("\n🛑 LM-Lab API shutting down\n")
+    print("\n[SHUTDOWN] LM-Lab API shutting down\n")
 
 
 # --------------------------------------------------------------------------- #
@@ -92,6 +92,11 @@ app.include_router(health.router,    prefix="/api/v1")
 app.include_router(meta.router,      prefix="/api/v1")
 app.include_router(mlp_grid.router,  prefix="/api/v1")
 app.include_router(models.router,    prefix="/api/v1")
+
+
+# Debug: print all registered routes at startup
+for route in app.routes:
+    print(route.path, getattr(route, "methods", None))
 
 
 # Root redirect to docs

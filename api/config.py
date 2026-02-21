@@ -29,7 +29,8 @@ _cors_raw = os.getenv(
 CORS_ORIGINS: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 
 # ============ Model Inference ============
-DEVICE = os.getenv("DEVICE", "cuda")
+import torch
+DEVICE = os.getenv("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
 DEFAULT_TOP_K = int(os.getenv("DEFAULT_TOP_K", "10"))
 MAX_GENERATE_LENGTH = int(os.getenv("MAX_GENERATE_LENGTH", "200"))
 

@@ -21,7 +21,7 @@ from api.schemas.responses import (
 )
 from api.services import inference
 
-router = APIRouter(prefix="/models/mlp-grid", tags=["MLP Grid"])
+router = APIRouter(prefix="/mlp-grid", tags=["MLP Grid"])
 
 
 # --------------------------------------------------------------------------- #

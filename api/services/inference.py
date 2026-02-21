@@ -1037,14 +1037,24 @@ def list_mlp_grid_configurations() -> list[dict]:
         meta = ck.get("metadata", {})
         snapshots = ck.get("snapshots", {})
 
-        # Get final loss from the last snapshot
+        # Get final metrics from the last snapshot
+        # Use val_loss as primary metric (scientifically meaningful);
+        # fall back to train_loss if val_loss is unavailable.
         sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
-        final_loss = None
+        final_val_loss = None
+        final_train_loss = None
+        generalization_gap = None
         if sorted_steps:
             last_snap = snapshots[sorted_steps[-1]]
-            final_loss = last_snap.get("metrics", {}).get("train_loss")
-        if final_loss is None:
-            final_loss = meta.get("initial_loss", 0.0)
+            last_metrics = last_snap.get("metrics", {})
+            final_val_loss = last_metrics.get("val_loss")
+            final_train_loss = last_metrics.get("train_loss")
+            generalization_gap = last_metrics.get("generalization_gap")
+
+        # Primary loss = val_loss if available, else train_loss
+        final_loss = final_val_loss if final_val_loss is not None else (
+            final_train_loss if final_train_loss is not None else meta.get("initial_loss", 0.0)
+        )
 
         model_stats = meta.get("model_stats", {})
 
@@ -1055,13 +1065,24 @@ def list_mlp_grid_configurations() -> list[dict]:
             "context_size": cfg.get("context_size", 3),
             "batch_size": cfg.get("batch_size"),
             "final_loss": round(final_loss, 6),
+            "final_val_loss": round(final_val_loss, 6) if final_val_loss is not None else None,
+            "final_train_loss": round(final_train_loss, 6) if final_train_loss is not None else None,
             "perplexity": round(math.exp(final_loss), 4),
             "initial_loss": meta.get("initial_loss"),
+            "initial_val_loss": None,  # populated below if available
+            "expected_uniform_loss": meta.get("expected_uniform_loss"),
+            "generalization_gap": round(generalization_gap, 6) if generalization_gap is not None else None,
             "train_time_sec": meta.get("train_time_sec"),
             "total_parameters": model_stats.get("total_parameters"),
+            "score": meta.get("score"),
             "snapshot_steps": sorted_steps,
             "filename": path.name,
         })
+
+        # Populate initial_val_loss from step_0 snapshot if present
+        if "step_0" in snapshots:
+            step0_metrics = snapshots["step_0"].get("metrics", {})
+            configs[-1]["initial_val_loss"] = step0_metrics.get("val_loss")
 
     return configs
 

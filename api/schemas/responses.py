@@ -345,17 +345,27 @@ class MLPInferenceResponse(BaseModel):
 # ============ MLP Grid (Model Zoo) ============
 
 class MLPGridConfigSummary(BaseModel):
-    """Summary of a single trained MLP configuration from the grid."""
+    """Summary of a single trained MLP configuration from the grid.
+    
+    final_loss = val_loss when available, else train_loss (clearly labeled in frontend).
+    perplexity is computed from final_loss for consistency.
+    """
     embedding_dim: int
     hidden_size: int
     learning_rate: float
     context_size: int
     batch_size: int | None = None
     final_loss: float
+    final_val_loss: float | None = None
+    final_train_loss: float | None = None
     perplexity: float
     initial_loss: float | None = None
+    initial_val_loss: float | None = None
+    expected_uniform_loss: float | None = None
+    generalization_gap: float | None = None
     train_time_sec: float | None = None
     total_parameters: int | None = None
+    score: float | None = None
     snapshot_steps: list[str] = []
     filename: str
 
