@@ -222,8 +222,11 @@ class NGramDiagnostics(BaseModel):
     vocab_size: int
     context_size: int
     estimated_context_space: int  # V^(context_size)
-    sparsity: float | None = None  # Observed sparsity
-    perplexity: float | None = None  # New metric
+    sparsity: float | None = None
+    perplexity: float | None = None
+    context_utilization: float | None = None  # unique_contexts / context_space
+    corpus_name: str = "Paul Graham Essays"
+    smoothing_alpha: float = 1.0  # Laplace smoothing alpha used during training
 
 
 class ContextDistribution(BaseModel):
@@ -242,16 +245,24 @@ class NGramTrainingInfo(BaseModel):
     context_utilization: float | None = None
     sparsity: float | None = None
     transition_density: float | None = None
-    loss_history: list[float] = []      # New
-    final_loss: float | None = None     # New
-    perplexity: float | None = None     # New
+    loss_history: list[float] = []
+    final_loss: float | None = None
+    perplexity: float | None = None
+    smoothing_alpha: float | None = None  # Laplace alpha (forwarded from diagnostics)
+    corpus_name: str | None = None        # Forwarded for convenience
+
+
+class ActiveSlice(BaseModel):
+    """The active context slice shown in the transition matrix panel."""
+    context_tokens: list[str] | None = None
+    matrix: TransitionMatrix | None = None
 
 
 class NGramVisualization(BaseModel):
     """Visualization-ready data for N-Gram models."""
     transition_matrix: TransitionMatrix | None = None  # For N=1
-    # active_slice: ActiveSlice | None = None          # Deprecated/Legacy
-    context_distributions: dict[str, ContextDistribution] | None = None # New structure
+    active_slice: ActiveSlice | None = None            # For N>1: current context slice
+    context_distributions: dict[str, ContextDistribution] | None = None
     training: NGramTrainingInfo
     diagnostics: NGramDiagnostics
     architecture: ModelArchitectureInfo

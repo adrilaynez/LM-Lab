@@ -591,29 +591,54 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         }
 
     # 3. Training Stats & Diagnostics
-    model_stats = model.get_training_stats() # Dict
-    
+    model_stats = model.get_training_stats()  # Dict from checkpoint metadata
+
+    # ── Compute fallbacks for any missing metrics ──────────────────────────────
+    # perplexity: derive from final_loss if not stored (exp(loss))
+    stored_perplexity = model_stats.get("perplexity")
+    stored_final_loss = model_stats.get("final_loss")
+    if stored_perplexity is None and stored_final_loss is not None:
+        import math
+        stored_perplexity = round(math.exp(stored_final_loss), 4)
+
+    # context_utilization: derive from unique_contexts / context_space_size
+    stored_utilization = model_stats.get("context_utilization")
+    unique_contexts = model_stats.get("unique_contexts")
+    context_space_size = model_stats.get("context_space_size")
+    est_context_space = tokenizer.vocab_size ** context_size
+    if stored_utilization is None and unique_contexts is not None:
+        denom = context_space_size or est_context_space
+        stored_utilization = round(unique_contexts / denom, 6) if denom > 0 else 0.0
+
+    # Laplace smoothing alpha — always 1.0 for our precomputed models
+    SMOOTHING_ALPHA = 1.0
+    CORPUS_NAME = "Paul Graham Essays"
+
     training = {
         "total_tokens": model_stats.get("total_tokens"),
         "unique_chars": model_stats.get("unique_chars"),
-        "unique_contexts": model_stats.get("unique_contexts"),
-        "context_space_size": model_stats.get("context_space_size"),
-        "context_utilization": model_stats.get("context_utilization"),
+        "unique_contexts": unique_contexts,
+        "context_space_size": context_space_size or est_context_space,
+        "context_utilization": stored_utilization,
         "sparsity": model_stats.get("sparsity"),
         "transition_density": model_stats.get("transition_density"),
-        "final_loss": model_stats.get("final_loss"),      # New
-        "perplexity": model_stats.get("perplexity"),      # New
-        "loss_history": model_stats.get("loss_history", []) # New
+        "final_loss": stored_final_loss,
+        "perplexity": stored_perplexity,
+        "loss_history": model_stats.get("loss_history", []),
+        "smoothing_alpha": SMOOTHING_ALPHA,
+        "corpus_name": CORPUS_NAME,
     }
 
-    # Dynamic Diagnostics
-    est_context_space = tokenizer.vocab_size ** context_size
+    # Dynamic Diagnostics — all fields required by NgramTechnicalExplanation
     diagnostics = {
         "vocab_size": tokenizer.vocab_size,
         "context_size": context_size,
         "estimated_context_space": est_context_space,
         "sparsity": model_stats.get("sparsity"),
-        "perplexity": model_stats.get("perplexity")
+        "perplexity": stored_perplexity,
+        "context_utilization": stored_utilization,
+        "corpus_name": CORPUS_NAME,
+        "smoothing_alpha": SMOOTHING_ALPHA,
     }
     
     # 4. Architecture Info
@@ -664,6 +689,22 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
     
     full_dist = probs.tolist()
     
+    # 6. Build active_slice — the single-row matrix for the current context (N>1)
+    # This is what the frontend TransitionMatrix renders when contextSize > 1.
+    active_slice = None
+    if context_size > 1 and "active_slice" in internals:
+        slice_probs = internals["active_slice"]  # Tensor [V]
+        slice_probs_list = slice_probs.cpu().tolist()
+        active_slice = {
+            "context_tokens": context_tokens,
+            "matrix": {
+                "shape": [1, len(slice_probs_list)],
+                "data": [slice_probs_list],
+                "row_labels": ["".join(context_tokens)] if context_tokens else ["?"],
+                "col_labels": tokenizer.chars,
+            },
+        }
+
     return {
         "model_id": f"ngram_n{context_size}",
         "model_name": f"{context_size}-Gram",
@@ -676,7 +717,8 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         "full_distribution": full_dist,
         "visualization": {
             "transition_matrix": transition_matrix,
-            "context_distributions": context_distributions, # New
+            "active_slice": active_slice,
+            "context_distributions": context_distributions,
             "training": training,
             "diagnostics": diagnostics,
             "architecture": architecture,
