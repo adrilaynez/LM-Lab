@@ -99,10 +99,20 @@
       padding: 0.48rem 0.65rem;
       border-radius: 0.75rem;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(11, 11, 16, 0.6);
       color: var(--text);
       font-size: 0.75rem;
       outline: none;
+    }
+
+    .select-input option {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .select-input:focus {
+      border-color: rgba(167, 139, 250, 0.4);
+      box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.07);
     }
 
     .search-input {
@@ -110,7 +120,7 @@
       padding: 0.5rem 0.75rem;
       border-radius: 0.75rem;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.02);
+      background: rgba(11, 11, 16, 0.6);
       color: var(--text);
       font-size: 0.75rem;
       outline: none;
@@ -118,6 +128,7 @@
 
     .search-input:focus {
       border-color: rgba(96, 165, 250, 0.45);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.07);
     }
 
     .search-input::placeholder {
@@ -573,13 +584,24 @@
     .fb-ss-header {
       font-size: 0.65rem;
       font-family: monospace;
-      color: var(--muted);
+      color: rgba(255, 255, 255, 0.72);
       padding: 0.4rem 0.75rem;
       background: rgba(255, 255, 255, 0.02);
       border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       gap: 0.5rem;
+    }
+
+    .fb-ss-header .ss-meta {
+      margin-left: auto;
+      color: var(--subtle);
+      font-size: 0.6rem;
+      letter-spacing: 0.02em;
+    }
+
+    .fb-ss-group img {
+      background: rgba(0, 0, 0, 0.2);
     }
 
     .fb-ss-group img {
@@ -806,6 +828,9 @@
           <option value="unread">Show: unread only</option>
           <option value="read">Show: read only</option>
         </select>
+        <select id="user-filter" class="select-input" onchange="applyFilter()" title="Filter by user">
+          <option value="all">User: all</option>
+        </select>
         <input id="search-input" class="search-input" placeholder="Filter by page/section/name/title/comment"
           oninput="applyFilter()" />
         <button class="btn" id="expand-all-btn" onclick="expandAll()">Expand all</button>
@@ -897,6 +922,7 @@
     function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     function sortMode() { return document.getElementById('sort-mode')?.value || 'folder'; }
     function unreadMode() { return document.getElementById('unread-filter')?.value || 'all'; }
+    function userMode() { return document.getElementById('user-filter')?.value || 'all'; }
     function keyForItem(item) {
       return encodeURIComponent(JSON.stringify({
         page_id: item.page_id,
@@ -936,6 +962,44 @@
       const pinA = Boolean(a.pinned), pinB = Boolean(b.pinned);
       if (pinA !== pinB) return pinA ? -1 : 1;
       return (b.timestamp || '').localeCompare(a.timestamp || '');
+    }
+
+    function userKeyForItem(item) {
+      const name = (item && item.name ? String(item.name).trim() : '').trim();
+      if (name) return 'name:' + name.toLowerCase();
+      const anon = (item && item.anon_id ? String(item.anon_id).trim() : '').trim();
+      if (anon) return 'anon:' + anon;
+      return 'anonymous';
+    }
+
+    function userLabelForKey(key) {
+      if (!key) return 'Unknown';
+      if (key.startsWith('name:')) return key.slice(5);
+      if (key.startsWith('anon:')) return 'anon ' + key.slice(5, 13) + '…';
+      if (key === 'anonymous') return 'Anonymous';
+      return key;
+    }
+
+    function populateUserFilter(items) {
+      const sel = document.getElementById('user-filter');
+      if (!sel) return;
+
+      const prev = sel.value || 'all';
+      const counts = new Map();
+      for (const it of items || []) {
+        const k = userKeyForItem(it);
+        counts.set(k, (counts.get(k) || 0) + 1);
+      }
+
+      const entries = Array.from(counts.entries())
+        .map(([key, count]) => ({ key, count, label: userLabelForKey(key) }))
+        .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label));
+
+      sel.innerHTML = `<option value="all">User: all</option>` +
+        entries.map(e => `<option value="${esc(e.key)}">${esc(e.label)} (${e.count})</option>`).join('');
+
+      if (prev && Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+      else sel.value = 'all';
     }
 
     function flattenPages(pages) {
@@ -1194,12 +1258,15 @@
     function applyFilter() {
       const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
       const unread = unreadMode();
+      const user = userMode();
       const cards = document.querySelectorAll('.fb-card');
       cards.forEach(card => {
         const haystack = (card.getAttribute('data-filter') || '').toLowerCase();
         const isRead = card.getAttribute('data-read') === 'true';
+        const userKey = card.getAttribute('data-user') || 'anonymous';
         const unreadOk = unread === 'all' || (unread === 'read' && isRead) || (unread === 'unread' && !isRead);
-        card.style.display = (!q || haystack.includes(q)) && unreadOk ? '' : 'none';
+        const userOk = user === 'all' || userKey === user;
+        card.style.display = (!q || haystack.includes(q)) && unreadOk && userOk ? '' : 'none';
       });
 
       document.querySelectorAll('.section-group').forEach(sec => {
@@ -1327,6 +1394,7 @@
       const hasUser = item.has_user_screenshot && item.user_screenshot_url;
       const unread = !Boolean(item.read);
       const itemKey = keyForItem(item);
+      const userKey = userKeyForItem(item);
       let badges = '';
       if (unread) badges += '<span class="badge badge-unread">new</span>';
       if (item.pinned) badges += '<span class="badge" style="background:rgba(251,191,36,0.12);color:var(--amber)">&#x1f4cc; pinned</span>';
@@ -1337,7 +1405,7 @@
       let screenshotsHtml = '';
       if (hasAuto) {
         screenshotsHtml += `<div class="fb-ss-group">
-      <div class="fb-ss-header">&#x1f4f7; Auto-captured screenshot</div>
+      <div class="fb-ss-header">&#x1f4f7; Auto-captured screenshot <span class="ss-meta">click to zoom</span></div>
       <img src="${esc(item.screenshot_url)}" loading="lazy" alt="Auto screenshot"
            onclick="event.stopPropagation();openLightbox('${esc(item.screenshot_url)}')"
            onerror="this.outerHTML='<div class=fb-ss-error>Screenshot failed to load</div>'" />
@@ -1345,7 +1413,7 @@
       }
       if (hasUser) {
         screenshotsHtml += `<div class="fb-ss-group">
-      <div class="fb-ss-header">&#x1f4ce; User-attached screenshot</div>
+      <div class="fb-ss-header">&#x1f4ce; User-attached screenshot <span class="ss-meta">click to zoom</span></div>
       <img src="${esc(item.user_screenshot_url)}" loading="lazy" alt="User screenshot"
            onclick="event.stopPropagation();openLightbox('${esc(item.user_screenshot_url)}')"
            onerror="this.outerHTML='<div class=fb-ss-error>Screenshot failed to load</div>'" />
@@ -1355,7 +1423,7 @@
       const title = item.title || '(No title)';
       const filterData = [pageId || '', sectionId || '', item.name || '', item.title || '', item.comment || '', item.timestamp || ''].join(' | ');
       const payload = encodeURIComponent(JSON.stringify(item));
-      return `<div class="fb-card ${unread ? 'unread' : ''}" data-filter="${esc(filterData)}" data-key="${itemKey}" data-item="${payload}" data-read="${item.read ? 'true' : 'false'}">
+      return `<div class="fb-card ${unread ? 'unread' : ''}" data-filter="${esc(filterData)}" data-user="${esc(userKey)}" data-key="${itemKey}" data-item="${payload}" data-read="${item.read ? 'true' : 'false'}">
     <div class="fb-summary" onclick="toggleCard(this)">
       <input class="fb-select" type="checkbox" ${selectedKeys.has(itemKey) ? 'checked' : ''} onclick="toggleCardSelection(event, '${itemKey}')" />
       ${unread ? '<span class="unread-dot"></span>' : ''}
@@ -1471,6 +1539,7 @@
         const pages = data.pages || {};
         const archivedPages = data.archived_pages || {};
         loadedItems = allItemsFromTree(pages, archivedPages);
+        populateUserFilter(loadedItems);
         keepSelectionValid();
         recalcUnreadCount();
 

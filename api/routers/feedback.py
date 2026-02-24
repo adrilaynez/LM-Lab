@@ -12,6 +12,7 @@ DELETE /api/v1/feedback/{page}/{section}/{basename} → delete feedback item
 """
 
 import base64
+import hashlib
 import json
 import os
 import time
@@ -24,6 +25,14 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, Field
+
+from api.config import (
+    GITHUB_TOKEN,
+    FEEDBACK_REPO_OWNER,
+    FEEDBACK_REPO_NAME,
+    FEEDBACK_REPO_BRANCH,
+    FEEDBACK_AUTO_COMMIT,
+)
 
 router = APIRouter(tags=["feedback"])
 
@@ -39,11 +48,14 @@ ARCHIVED_FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 # ---------------------------------------------------------------------------
-#  In-memory rate limit: 1 per IP+section per 30 seconds
+#  In-memory rate limit: 1 per IP+section per 30 seconds (or anon_id if available)
 # ---------------------------------------------------------------------------
 
 _rate_limit: dict[str, float] = {}
 RATE_LIMIT_SECONDS = 30  # 30 seconds
+
+# Valid feedback states
+VALID_STATES = {"new", "triaged", "in_progress", "fixed", "wont_fix", "archived"}
 
 
 def _decode_image_b64(raw_b64: str) -> tuple[bytes, str]:
@@ -66,8 +78,14 @@ def _decode_image_b64(raw_b64: str) -> tuple[bytes, str]:
     return img_bytes, ".jpg"
 
 
-def _check_rate_limit(ip: str, page_id: str, section_id: str) -> None:
-    key = f"{ip}:{page_id}:{section_id}"
+def _check_rate_limit(ip: str, page_id: str, section_id: str, anon_id: Optional[str] = None) -> None:
+    # Prefer anon_id for more stable rate limiting (survives IP changes)
+    if anon_id:
+        key_base = hashlib.sha256(anon_id.encode()).hexdigest()[:16]
+        key = f"anon:{key_base}:{page_id}:{section_id}"
+    else:
+        key = f"ip:{ip}:{page_id}:{section_id}"
+    
     now = time.time()
     last = _rate_limit.get(key, 0)
     if now - last < RATE_LIMIT_SECONDS:
@@ -97,6 +115,16 @@ class FeedbackPayload(BaseModel):
     name: Optional[str] = Field(None, max_length=100)
     screenshot_b64: Optional[str] = None          # auto-capture (silent)
     user_screenshot_b64: Optional[str] = None      # user-attached image
+    
+    # Extended metadata
+    feedback_type: Optional[str] = Field(None, max_length=50)  # "bug", "idea", "question"
+    url: Optional[str] = Field(None, max_length=500)  # Full URL with path + hash
+    user_agent: Optional[str] = Field(None, max_length=500)
+    viewport_width: Optional[int] = None
+    viewport_height: Optional[int] = None
+    theme: Optional[str] = Field(None, max_length=20)  # "dark", "light"
+    language: Optional[str] = Field(None, max_length=10)  # "es", "en"
+    local_timestamp: Optional[str] = Field(None, max_length=50)  # User's local time
 
 
 class FeedbackResponse(BaseModel):
@@ -109,6 +137,18 @@ class FeedbackActionPayload(BaseModel):
     section_id: str = Field(..., min_length=1, max_length=64)
     basename: str = Field(..., min_length=1, max_length=64)
     archived: bool = False
+
+
+class UpdateStatePayload(FeedbackActionPayload):
+    state: str = Field(..., min_length=1, max_length=50)
+
+
+class UpdateTagsPayload(FeedbackActionPayload):
+    tags: list[str] = Field(..., max_length=20)
+
+
+class UpdateOwnerPayload(FeedbackActionPayload):
+    owner: Optional[str] = Field(None, max_length=100)
 
 
 class PinPayload(FeedbackActionPayload):
@@ -203,6 +243,72 @@ def _read_feedback_json(root: Path, page_id: str, section_id: str, basename: str
 
 def _write_feedback_json(json_path: Path, data: dict) -> None:
     json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _commit_feedback_to_github(json_path: Path, data: dict, action: str = "create") -> None:
+    """Auto-commit feedback to GitHub repo for persistent storage."""
+    if not FEEDBACK_AUTO_COMMIT or not GITHUB_TOKEN or not FEEDBACK_REPO_OWNER or not FEEDBACK_REPO_NAME:
+        return
+    
+    try:
+        # Build relative path from project root
+        project_root = Path(__file__).resolve().parent.parent.parent
+        rel_path = json_path.relative_to(project_root).as_posix()
+        
+        # Read current file content
+        content_b64 = base64.b64encode(json_path.read_bytes()).decode("utf-8")
+        
+        # Build commit message
+        page = data.get("page_id", "unknown")
+        section = data.get("section_id", "general")
+        title = data.get("title") or "(No title)"
+        commit_msg = f"[Feedback] {page}/{section}: {title}"
+        
+        # Get current file SHA if exists (required for updates)
+        sha_url = f"https://api.github.com/repos/{FEEDBACK_REPO_OWNER}/{FEEDBACK_REPO_NAME}/contents/{rel_path}?ref={FEEDBACK_REPO_BRANCH}"
+        sha_req = urllib.request.Request(sha_url, headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "LM-Lab-Feedback",
+        })
+        
+        file_sha = None
+        try:
+            with urllib.request.urlopen(sha_req, timeout=8) as resp:
+                existing = json.loads(resp.read().decode("utf-8"))
+                file_sha = existing.get("sha")
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                # Unexpected error, but don't block feedback submission
+                return
+        
+        # Create or update file
+        payload = {
+            "message": commit_msg,
+            "content": content_b64,
+            "branch": FEEDBACK_REPO_BRANCH,
+        }
+        if file_sha:
+            payload["sha"] = file_sha
+        
+        put_url = f"https://api.github.com/repos/{FEEDBACK_REPO_OWNER}/{FEEDBACK_REPO_NAME}/contents/{rel_path}"
+        put_req = urllib.request.Request(
+            put_url,
+            data=json.dumps(payload).encode("utf-8"),
+            method="PUT",
+            headers={
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json",
+                "User-Agent": "LM-Lab-Feedback",
+            },
+        )
+        
+        with urllib.request.urlopen(put_req, timeout=12) as resp:
+            pass  # Success
+    except Exception:
+        # Don't block feedback submission on GitHub errors
+        pass
 
 
 def _set_feedback_read_state(page_id: str, section_id: str, basename: str, archived: bool, read: bool) -> None:
@@ -317,15 +423,26 @@ def _build_tree(root: Path, archived: bool = False) -> dict[str, dict[str, list]
                 "pinned": bool(data.get("pinned", False)),
                 "read": bool(data.get("read", False)),
                 "read_at": data.get("read_at"),
+                "state": data.get("state", "new"),
+                "tags": data.get("tags", []),
+                "owner": data.get("owner"),
                 "timestamp": data.get("timestamp"),
                 "title": data.get("title"),
                 "comment": data.get("comment"),
                 "name": data.get("name"),
                 "anon_id": data.get("anon_id"),
                 "github_issue_url": data.get("github_issue_url"),
-                "has_screenshot": screenshot_name is not None,
+                "github_issue_number": data.get("github_issue_number"),
+                "feedback_type": data.get("feedback_type"),
+                "url": data.get("url"),
+                "viewport_width": data.get("viewport_width"),
+                "viewport_height": data.get("viewport_height"),
+                "theme": data.get("theme"),
+                "language": data.get("language"),
+                "local_timestamp": data.get("local_timestamp"),
+                "has_screenshot": bool(screenshot_name),
                 "screenshot_url": screenshot_url,
-                "has_user_screenshot": user_screenshot_name is not None,
+                "has_user_screenshot": bool(user_screenshot_name),
                 "user_screenshot_url": user_screenshot_url,
             })
         except Exception:
@@ -339,12 +456,13 @@ def _build_tree(root: Path, archived: bool = False) -> dict[str, dict[str, list]
             )
     return tree
 
+
 @router.post("/feedback", response_model=FeedbackResponse)
 async def submit_feedback(payload: FeedbackPayload, request: Request):
     client_ip = request.client.host if request.client else "unknown"
-    _check_rate_limit(client_ip, payload.page_id, payload.section_id)
+    _check_rate_limit(client_ip, payload.page_id, payload.section_id, payload.anon_id)
 
-    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    now_utc = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     safe_page = _safe_name(payload.page_id)
     safe_section = _safe_name(payload.section_id)
 
@@ -352,24 +470,32 @@ async def submit_feedback(payload: FeedbackPayload, request: Request):
     section_dir = FEEDBACK_DIR / safe_page / safe_section
     section_dir.mkdir(parents=True, exist_ok=True)
 
-    basename = ts
+    basename = now_utc
 
     # Build JSON data (exclude screenshot bytes from stored JSON)
     data = {
-        "timestamp": ts,
         "page_id": payload.page_id,
         "section_id": payload.section_id,
-        "pinned": False,
-        "title": payload.title,
         "comment": payload.comment,
-        "anon_id": payload.anon_id,
+        "title": payload.title,
         "name": payload.name,
+        "anon_id": payload.anon_id,
+        "timestamp": now_utc,
         "has_screenshot": False,
-        "has_user_screenshot": payload.user_screenshot_b64 is not None,
+        "has_user_screenshot": False,
+        "pinned": False,
         "read": False,
-        "read_at": None,
-        "github_issue_url": None,
-        "ip": client_ip,
+        "state": "new",
+        "tags": [],
+        "owner": None,
+        "feedback_type": payload.feedback_type,
+        "url": payload.url,
+        "user_agent": payload.user_agent,
+        "viewport_width": payload.viewport_width,
+        "viewport_height": payload.viewport_height,
+        "theme": payload.theme,
+        "language": payload.language,
+        "local_timestamp": payload.local_timestamp,
     }
 
     json_path = section_dir / f"{basename}.json"
@@ -385,6 +511,9 @@ async def submit_feedback(payload: FeedbackPayload, request: Request):
             data["has_user_screenshot"] = False
 
     json_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    
+    # Auto-commit to GitHub for persistence
+    _commit_feedback_to_github(json_path, data, action="create")
 
     return FeedbackResponse(ok=True, filename=f"{safe_page}/{safe_section}/{basename}.json")
 
@@ -460,6 +589,45 @@ async def mark_feedback_read(payload: ReadPayload):
         payload.read,
     )
     return FeedbackActionResponse(ok=True, message="Feedback marked as read" if payload.read else "Feedback marked as unread")
+
+
+@router.post("/feedback/update-state", response_model=FeedbackActionResponse)
+async def update_feedback_state(payload: UpdateStatePayload):
+    """Update feedback state (new, triaged, in_progress, fixed, wont_fix)."""
+    if payload.state not in VALID_STATES:
+        raise HTTPException(status_code=400, detail=f"Invalid state. Must be one of: {', '.join(VALID_STATES)}")
+    
+    root = ARCHIVED_FEEDBACK_DIR if payload.archived else FEEDBACK_DIR
+    json_path, data = _read_feedback_json(root, payload.page_id, payload.section_id, payload.basename)
+    data["state"] = payload.state
+    data["state_updated_at"] = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    _write_feedback_json(json_path, data)
+    _commit_feedback_to_github(json_path, data, action="update")
+    return FeedbackActionResponse(ok=True, message=f"State updated to '{payload.state}'")
+
+
+@router.post("/feedback/update-tags", response_model=FeedbackActionResponse)
+async def update_feedback_tags(payload: UpdateTagsPayload):
+    """Update feedback tags/labels."""
+    root = ARCHIVED_FEEDBACK_DIR if payload.archived else FEEDBACK_DIR
+    json_path, data = _read_feedback_json(root, payload.page_id, payload.section_id, payload.basename)
+    data["tags"] = [t.strip() for t in payload.tags if t.strip()][:20]
+    data["tags_updated_at"] = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    _write_feedback_json(json_path, data)
+    _commit_feedback_to_github(json_path, data, action="update")
+    return FeedbackActionResponse(ok=True, message="Tags updated")
+
+
+@router.post("/feedback/update-owner", response_model=FeedbackActionResponse)
+async def update_feedback_owner(payload: UpdateOwnerPayload):
+    """Assign or unassign feedback owner."""
+    root = ARCHIVED_FEEDBACK_DIR if payload.archived else FEEDBACK_DIR
+    json_path, data = _read_feedback_json(root, payload.page_id, payload.section_id, payload.basename)
+    data["owner"] = payload.owner
+    data["owner_updated_at"] = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    _write_feedback_json(json_path, data)
+    _commit_feedback_to_github(json_path, data, action="update")
+    return FeedbackActionResponse(ok=True, message=f"Owner set to '{payload.owner}'" if payload.owner else "Owner cleared")
 
 
 @router.post("/feedback/bulk", response_model=BulkActionResponse)
@@ -545,8 +713,7 @@ async def create_feedback_github_issue(payload: GithubIssuePayload):
             issue_url=existing_url,
         )
 
-    github_token = os.getenv("GITHUB_TOKEN")
-    if not github_token:
+    if not GITHUB_TOKEN:
         return GithubIssueResponse(
             ok=True,
             message="GITHUB_TOKEN is not configured on the backend. Returning prefilled issue draft only.",
@@ -568,7 +735,7 @@ async def create_feedback_github_issue(payload: GithubIssuePayload):
         data=json.dumps(issue_payload).encode("utf-8"),
         method="POST",
         headers={
-            "Authorization": f"Bearer {github_token}",
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
             "Accept": "application/vnd.github+json",
             "Content-Type": "application/json",
             "User-Agent": "LM-Lab-Feedback-Viewer",

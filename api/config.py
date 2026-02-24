@@ -38,3 +38,10 @@ MAX_GENERATE_LENGTH = int(os.getenv("MAX_GENERATE_LENGTH", "200"))
 API_TITLE = "LM-Lab API"
 API_DESCRIPTION = "Interactive ML model inference & interpretability API"
 API_VERSION = "1.0.0"
+
+# ============ GitHub Integration ============
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+FEEDBACK_REPO_OWNER = os.getenv("FEEDBACK_REPO_OWNER", "")
+FEEDBACK_REPO_NAME = os.getenv("FEEDBACK_REPO_NAME", "")
+FEEDBACK_REPO_BRANCH = os.getenv("FEEDBACK_REPO_BRANCH", "main")
+FEEDBACK_AUTO_COMMIT = os.getenv("FEEDBACK_AUTO_COMMIT", "false").lower() == "true"
