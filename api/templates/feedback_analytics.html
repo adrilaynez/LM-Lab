@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📊 Feedback Analytics</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --bg: #0b0b10;
+      --card: #16161f;
+      --card2: #1a1a26;
+      --border: #2a2a3a;
+      --text: #f0f0f5;
+      --subtle: #9090a5;
+      --emerald: #34d399;
+      --blue: #60a5fa;
+      --rose: #fb7185;
+      --violet: #a78bfa;
+      --amber: #fbbf24;
+    }
+    
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2rem;
+      min-height: 100vh;
+    }
+    
+    .header {
+      max-width: 1400px;
+      margin: 0 auto 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--emerald), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .nav {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .btn {
+      padding: 0.6rem 1rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.6rem;
+      color: var(--text);
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    
+    .btn:hover {
+      background: var(--card2);
+      border-color: var(--emerald);
+      transform: translateY(-1px);
+    }
+    
+    .dashboard {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+    
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      transition: all 0.3s;
+    }
+    
+    .card:hover {
+      border-color: var(--emerald);
+      box-shadow: 0 8px 24px rgba(52, 211, 153, 0.1);
+      transform: translateY(-2px);
+    }
+    
+    .card-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--subtle);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .stat-big {
+      font-size: 3rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--emerald), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+    
+    .stat-label {
+      font-size: 0.9rem;
+      color: var(--subtle);
+    }
+    
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 0;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+    
+    .stat-name {
+      font-size: 0.85rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--emerald);
+    }
+    
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.6rem;
+      border-radius: 0.4rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    
+    .badge-new { background: rgba(96, 165, 250, 0.12); color: var(--blue); }
+    .badge-triaged { background: rgba(251, 191, 36, 0.12); color: var(--amber); }
+    .badge-in_progress { background: rgba(167, 139, 250, 0.12); color: var(--violet); }
+    .badge-fixed { background: rgba(52, 211, 153, 0.12); color: var(--emerald); }
+    .badge-wont_fix { background: rgba(251, 113, 133, 0.12); color: var(--rose); }
+    
+    .bar-chart {
+      margin-top: 1rem;
+    }
+    
+    .bar-item {
+      margin-bottom: 1rem;
+    }
+    
+    .bar-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.4rem;
+      font-size: 0.8rem;
+    }
+    
+    .bar-bg {
+      height: 8px;
+      background: var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--emerald), var(--blue));
+      border-radius: 4px;
+      transition: width 0.6s ease;
+    }
+    
+    .tag-cloud {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 1rem;
+    }
+    
+    .tag-pill {
+      padding: 0.4rem 0.8rem;
+      background: rgba(167, 139, 250, 0.12);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      border-radius: 1rem;
+      color: var(--violet);
+      font-size: 0.75rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .tag-pill:hover {
+      background: rgba(167, 139, 250, 0.2);
+      transform: scale(1.05);
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 4rem;
+      color: var(--subtle);
+      font-size: 1.2rem;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .loading {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>📊 Feedback Analytics</h1>
+    <div class="nav">
+      <a href="/api/v1/feedback/viewer" class="btn">
+        <svg style="width:16px;height:16px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Back to Viewer
+      </a>
+      <button class="btn" onclick="loadData()">
+        <svg style="width:16px;height:16px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+        Refresh
+      </button>
+    </div>
+  </div>
+
+  <div id="dashboard" class="loading">Loading analytics...</div>
+
+  <script>
+    function esc(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function loadData() {
+      const dashboard = document.getElementById('dashboard');
+      dashboard.className = 'loading';
+      dashboard.textContent = 'Loading analytics...';
+
+      try {
+        const res = await fetch('/api/v1/feedback/analytics');
+        if (!res.ok) throw new Error('Failed to load analytics');
+        const data = await res.json();
+
+        renderDashboard(data);
+      } catch (e) {
+        dashboard.innerHTML = `<div style="color:var(--rose);text-align:center;padding:4rem">❌ ${esc(e.message)}</div>`;
+      }
+    }
+
+    function renderDashboard(data) {
+      const total = data.total || 0;
+      const unread = data.unread || 0;
+      const byState = data.by_state || {};
+      const byType = data.by_type || {};
+      const byPage = data.by_page || {};
+      const topTags = data.top_tags || [];
+
+      const html = `
+        <div class="card">
+          <div class="card-title">📈 Total Feedbacks</div>
+          <div class="stat-big">${total}</div>
+          <div class="stat-label">All time</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🔔 Unread</div>
+          <div class="stat-big" style="background:linear-gradient(135deg, var(--amber), var(--rose))">${unread}</div>
+          <div class="stat-label">Needs attention</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📊 By State</div>
+          <div>
+            ${Object.entries(byState).map(([state, count]) => {
+              const stateClass = state.replace('_', '');
+              const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+              return `
+                <div class="stat-row">
+                  <div class="stat-name">
+                    <span class="badge badge-${stateClass}">${state.replace('_', ' ')}</span>
+                  </div>
+                  <div class="stat-value">${count} (${percentage}%)</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🏷️ By Type</div>
+          <div class="bar-chart">
+            ${Object.entries(byType).map(([type, count]) => {
+              const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+              return `
+                <div class="bar-item">
+                  <div class="bar-header">
+                    <span>${esc(type || 'unknown')}</span>
+                    <span style="color:var(--emerald);font-weight:600">${count}</span>
+                  </div>
+                  <div class="bar-bg">
+                    <div class="bar-fill" style="width:${percentage}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">📄 By Page</div>
+          <div class="bar-chart">
+            ${Object.entries(byPage).slice(0, 8).map(([page, count]) => {
+              const percentage = total > 0 ? Math.round((count / total) * 100) : 0;
+              return `
+                <div class="bar-item">
+                  <div class="bar-header">
+                    <span>${esc(page)}</span>
+                    <span style="color:var(--blue);font-weight:600">${count}</span>
+                  </div>
+                  <div class="bar-bg">
+                    <div class="bar-fill" style="width:${percentage}%"></div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">🏷️ Top Tags</div>
+          <div class="tag-cloud">
+            ${topTags.map(({ tag, count }) => `
+              <div class="tag-pill">${esc(tag)} (${count})</div>
+            `).join('')}
+          </div>
+          ${topTags.length === 0 ? '<div style="color:var(--subtle);font-size:0.85rem;margin-top:1rem">No tags yet</div>' : ''}
+        </div>
+      `;
+
+      document.getElementById('dashboard').innerHTML = html;
+      document.getElementById('dashboard').className = 'dashboard';
+    }
+
+    // Load on startup
+    loadData();
+  </script>
+</body>
+</html>

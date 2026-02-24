@@ -140,19 +140,19 @@
       align-items: center;
       gap: 0.5rem;
       padding: 0.5rem 1rem;
-      border-radius: 0.75rem;
       border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.02);
-      color: var(--muted);
-      font-size: 0.75rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-family: inherit;
-    }
-
-    .btn:hover {
-      border-color: rgba(255, 255, 255, 0.2);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
       color: var(--text);
+      border-radius: 0.6rem;
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 500;
+      transition: all 0.2s;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
 
     .btn.loading svg {
@@ -299,6 +299,19 @@
       margin-left: 0.5rem;
     }
 
+    .section-group h1 {
+      font-size: 1.6rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--emerald), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-shadow: 0 2px 8px rgba(52, 211, 153, 0.2);
+    }
+
     .sec-btn {
       display: flex;
       align-items: center;
@@ -346,11 +359,12 @@
 
     /* Feedback card — collapsed (summary row) */
     .fb-card {
-      border-radius: 0.75rem;
+      background: linear-gradient(135deg, var(--card), var(--card2));
       border: 1px solid var(--border);
-      background: var(--card);
+      border-radius: 0.8rem;
       overflow: hidden;
-      transition: border-color 0.2s, box-shadow 0.2s;
+      transition: all 0.25s;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
 
     .fb-card.unread {
@@ -359,7 +373,9 @@
     }
 
     .fb-card:hover {
-      border-color: rgba(255, 255, 255, 0.12);
+      border-color: rgba(52, 211, 153, 0.4);
+      box-shadow: 0 8px 24px rgba(52, 211, 153, 0.12);
+      transform: translateY(-2px);
     }
 
     .fb-card.expanded {
@@ -490,6 +506,92 @@
       color: var(--blue);
     }
 
+    .state-badge {
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.25rem 0.6rem;
+      border-radius: 0.4rem;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      transition: all 0.2s;
+    }
+
+    .state-badge:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .state-badge.state-new {
+      background: rgba(96, 165, 250, 0.12);
+      color: var(--blue);
+      border: 1px solid rgba(96, 165, 250, 0.2);
+    }
+
+    .state-badge.state-triaged {
+      background: rgba(251, 191, 36, 0.12);
+      color: var(--amber);
+      border: 1px solid rgba(251, 191, 36, 0.2);
+    }
+
+    .state-badge.state-in_progress,
+    .state-badge.state-inprogress {
+      background: rgba(167, 139, 250, 0.12);
+      color: var(--violet);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+    }
+
+    .state-badge.state-fixed {
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(52, 211, 153, 0.2);
+    }
+
+    .state-badge.state-wont_fix,
+    .state-badge.state-wontfix {
+      background: rgba(251, 113, 133, 0.12);
+      color: var(--rose);
+      border: 1px solid rgba(251, 113, 133, 0.2);
+    }
+
+    .state-badge.state-archived {
+      background: rgba(144, 144, 165, 0.12);
+      color: var(--subtle);
+      border: 1px solid rgba(144, 144, 165, 0.2);
+    }
+
+    .tag-badge {
+      font-size: 0.65rem;
+      font-weight: 500;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.35rem;
+      background: rgba(167, 139, 250, 0.12);
+      color: var(--violet);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      transition: all 0.2s;
+    }
+
+    .tag-badge:hover {
+      background: rgba(167, 139, 250, 0.2);
+      transform: scale(1.05);
+    }
+
+    .owner-badge {
+      font-size: 0.65rem;
+      font-weight: 500;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.35rem;
+      background: rgba(52, 211, 153, 0.12);
+      color: var(--emerald);
+      border: 1px solid rgba(52, 211, 153, 0.2);
+      transition: all 0.2s;
+    }
+
+    .owner-badge:hover {
+      background: rgba(52, 211, 153, 0.2);
+      transform: scale(1.05);
+    }
+
     .fb-time {
       font-size: 0.6rem;
       font-family: monospace;
@@ -601,16 +703,16 @@
     }
 
     .fb-ss-group img {
-      background: rgba(0, 0, 0, 0.2);
-    }
-
-    .fb-ss-group img {
       width: 100%;
+      min-height: 200px;
       height: auto;
       display: block;
       cursor: pointer;
       opacity: 0.9;
       transition: opacity 0.2s;
+      background: rgba(0, 0, 0, 0.2);
+      object-fit: contain;
+      border-radius: 0 0 0.5rem 0.5rem;
     }
 
     .fb-ss-group img:hover {
@@ -804,6 +906,16 @@
       background: rgba(251, 191, 36, 0.1);
       color: var(--amber);
     }
+
+    @keyframes spin {
+      from {
+        transform: rotate(0deg);
+      }
+
+      to {
+        transform: rotate(360deg);
+      }
+    }
   </style>
 </head>
 
@@ -819,9 +931,41 @@
         </div>
       </div>
       <div class="header-actions">
+        <a href="/api/v1/feedback/dashboard" class="btn" title="View analytics dashboard" style="text-decoration:none">
+          <svg style="width:14px;height:14px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          Analytics
+        </a>
+        <button class="btn" onclick="syncFromGithub()" title="Pull feedbacks from GitHub repo">
+          <svg style="width:14px;height:14px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+          </svg>
+          Sync from GitHub
+        </button>
+        <button class="btn" onclick="exportFeedbacks()" title="Download all feedbacks as ZIP">
+          <svg style="width:14px;height:14px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Export ZIP
+        </button>
         <select id="sort-mode" class="select-input" onchange="loadData()">
           <option value="folder">Sort: by folder</option>
           <option value="date">Sort: by date (global)</option>
+        </select>
+        <select id="state-filter" class="select-input" onchange="applyFilter()" title="Filter by state">
+          <option value="all">State: all</option>
+          <option value="new">State: new</option>
+          <option value="triaged">State: triaged</option>
+          <option value="in_progress">State: in progress</option>
+          <option value="fixed">State: fixed</option>
+          <option value="wont_fix">State: won't fix</option>
+          <option value="archived">State: archived</option>
         </select>
         <select id="unread-filter" class="select-input" onchange="applyFilter()">
           <option value="all">Show: all</option>
@@ -831,7 +975,7 @@
         <select id="user-filter" class="select-input" onchange="applyFilter()" title="Filter by user">
           <option value="all">User: all</option>
         </select>
-        <input id="search-input" class="search-input" placeholder="Filter by page/section/name/title/comment"
+        <input id="search-input" class="search-input" placeholder="Search: page/section/name/title/comment"
           oninput="applyFilter()" />
         <button class="btn" id="expand-all-btn" onclick="expandAll()">Expand all</button>
         <button class="btn" id="collapse-all-btn" onclick="collapseAll()">Collapse all</button>
@@ -956,6 +1100,21 @@
     function openLightbox(src) {
       document.getElementById('lightbox-img').src = src;
       document.getElementById('lightbox').classList.remove('hidden');
+    }
+
+    function downloadScreenshot(url, filename) {
+      fetch(url)
+        .then(res => res.blob())
+        .then(blob => {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(a.href);
+        })
+        .catch(() => alert('Failed to download screenshot'));
     }
 
     function itemSort(a, b) {
@@ -1255,18 +1414,115 @@
       });
     }
 
+    async function syncFromGithub() {
+      const btn = event.target.closest('button');
+      if (!btn) return;
+      const orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<svg style="width:14px;height:14px;animation:spin 1s linear infinite" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Syncing...';
+      try {
+        const res = await fetch('/api/v1/feedback/sync-from-github', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Sync failed');
+        alert(`✅ Synced ${data.synced}/${data.total} files from GitHub\n${data.errors?.length ? `Errors: ${data.errors.length}` : ''}`);
+        await loadData();
+      } catch (e) {
+        alert(`❌ Sync failed: ${e.message || e}`);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }
+    }
+
+    function exportFeedbacks() {
+      window.location.href = '/api/v1/feedback/export';
+    }
+
+    async function aiSuggest(item) {
+      if (!item) return;
+      const btn = event.target;
+      const orig = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '🤖 Thinking...';
+
+      try {
+        const res = await apiAction('/api/v1/feedback/ai-triage', 'POST', {
+          page_id: item.page_id,
+          section_id: item.section_id,
+          basename: item.basename,
+          archived: Boolean(item.archived)
+        });
+
+        if (res.ok && res.suggestions) {
+          const s = res.suggestions;
+          const msg = `🤖 AI Suggestions:\n\nState: ${s.state}\nTags: ${s.tags.join(', ')}\nPriority: ${s.priority}\nSummary: ${s.summary}\n\nApply these suggestions?`;
+
+          if (confirm(msg)) {
+            // Apply state
+            if (s.state) {
+              await apiAction('/api/v1/feedback/update-state', 'POST', {
+                page_id: item.page_id,
+                section_id: item.section_id,
+                basename: item.basename,
+                archived: Boolean(item.archived),
+                state: s.state
+              });
+            }
+
+            // Apply tags
+            if (s.tags && s.tags.length) {
+              await apiAction('/api/v1/feedback/update-tags', 'POST', {
+                page_id: item.page_id,
+                section_id: item.section_id,
+                basename: item.basename,
+                archived: Boolean(item.archived),
+                tags: s.tags
+              });
+            }
+
+            await loadData();
+            alert('✅ AI suggestions applied!');
+          }
+        } else {
+          alert('❌ AI triage failed: ' + (res.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('❌ AI triage failed: ' + (e.message || e));
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = orig;
+      }
+    }
+
     function applyFilter() {
-      const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
-      const unread = unreadMode();
-      const user = userMode();
+      const unreadMode = document.getElementById('unread-filter')?.value || 'all';
+      const stateMode = document.getElementById('state-filter')?.value || 'all';
+      const userMode = document.getElementById('user-filter')?.value || 'all';
+      const query = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+
       const cards = document.querySelectorAll('.fb-card');
-      cards.forEach(card => {
-        const haystack = (card.getAttribute('data-filter') || '').toLowerCase();
-        const isRead = card.getAttribute('data-read') === 'true';
-        const userKey = card.getAttribute('data-user') || 'anonymous';
-        const unreadOk = unread === 'all' || (unread === 'read' && isRead) || (unread === 'unread' && !isRead);
-        const userOk = user === 'all' || userKey === user;
-        card.style.display = (!q || haystack.includes(q)) && unreadOk && userOk ? '' : 'none';
+      cards.forEach((card) => {
+        const readAttr = card.getAttribute('data-read') || 'false';
+        const isRead = readAttr === 'true';
+        const userKey = card.getAttribute('data-user') || '';
+        const itemData = card.getAttribute('data-item');
+        let itemState = 'new';
+        try {
+          const item = itemData ? JSON.parse(decodeURIComponent(itemData)) : null;
+          itemState = item?.state || 'new';
+        } catch { }
+
+        let show = true;
+        if (unreadMode === 'unread' && isRead) show = false;
+        if (unreadMode === 'read' && !isRead) show = false;
+        if (stateMode !== 'all' && itemState !== stateMode) show = false;
+        if (userMode !== 'all' && userKey !== userMode) show = false;
+        if (query) {
+          const fd = (card.getAttribute('data-filter') || '').toLowerCase();
+          if (!fd.includes(query)) show = false;
+        }
+
+        card.style.display = show ? '' : 'none';
       });
 
       document.querySelectorAll('.section-group').forEach(sec => {
@@ -1395,33 +1651,79 @@
       const unread = !Boolean(item.read);
       const itemKey = keyForItem(item);
       const userKey = userKeyForItem(item);
-      let badges = '';
-      if (unread) badges += '<span class="badge badge-unread">new</span>';
-      if (item.pinned) badges += '<span class="badge" style="background:rgba(251,191,36,0.12);color:var(--amber)">&#x1f4cc; pinned</span>';
-      if (hasAuto) badges += '<span class="badge badge-img">&#x1f4f7; auto</span>';
-      if (hasUser) badges += '<span class="badge badge-user-img">&#x1f4ce; user</span>';
-      if (item.github_issue_url) badges += '<span class="badge" style="background:rgba(52,211,153,0.12);color:var(--emerald)">issue linked</span>';
 
-      let screenshotsHtml = '';
-      if (hasAuto) {
-        screenshotsHtml += `<div class="fb-ss-group">
-      <div class="fb-ss-header">&#x1f4f7; Auto-captured screenshot <span class="ss-meta">click to zoom</span></div>
-      <img src="${esc(item.screenshot_url)}" loading="lazy" alt="Auto screenshot"
-           onclick="event.stopPropagation();openLightbox('${esc(item.screenshot_url)}')"
-           onerror="this.outerHTML='<div class=fb-ss-error>Screenshot failed to load</div>'" />
-    </div>`;
-      }
-      if (hasUser) {
-        screenshotsHtml += `<div class="fb-ss-group">
-      <div class="fb-ss-header">&#x1f4ce; User-attached screenshot <span class="ss-meta">click to zoom</span></div>
-      <img src="${esc(item.user_screenshot_url)}" loading="lazy" alt="User screenshot"
-           onclick="event.stopPropagation();openLightbox('${esc(item.user_screenshot_url)}')"
-           onerror="this.outerHTML='<div class=fb-ss-error>Screenshot failed to load</div>'" />
-    </div>`;
+      // State badge
+      const state = item.state || 'new';
+      const stateClass = `state-${state}`;
+      let stateBadge = `<span class="state-badge ${stateClass}">${state.replace('_', ' ')}</span>`;
+
+      // Tags badges
+      let tagsBadges = '';
+      if (item.tags && item.tags.length) {
+        tagsBadges = item.tags.slice(0, 3).map(tag => `<span class="tag-badge">${esc(tag)}</span>`).join('');
+        if (item.tags.length > 3) tagsBadges += `<span class="tag-badge">+${item.tags.length - 3}</span>`;
       }
 
-      const title = item.title || '(No title)';
-      const filterData = [pageId || '', sectionId || '', item.name || '', item.title || '', item.comment || '', item.timestamp || ''].join(' | ');
+      // Owner badge
+      let ownerBadge = '';
+      if (item.owner) {
+        ownerBadge = `<span class="owner-badge">👤 ${esc(item.owner)}</span>`;
+      }
+
+      let badges = stateBadge;
+      if (tagsBadges) badges += ' ' + tagsBadges;
+      if (ownerBadge) badges += ' ' + ownerBadge;
+      if (item.pinned) badges += ' <span class="badge" style="background:rgba(251,191,36,0.12);color:var(--amber)">📌 pinned</span>';
+      if (item.github_issue_url) badges += ' <span class="badge" style="background:rgba(52,211,153,0.12);color:var(--emerald)">issue linked</span>';
+
+      const title = item.title || `Feedback from ${item.name || 'Anonymous'}`;
+      const filterData = [pageId, sectionId, item.name || '', title, item.comment || ''].join(' ').toLowerCase();
+
+      const screenshotsHtml = (() => {
+        let out = '';
+        if (hasAuto) {
+          const autoSrc = (typeof item.screenshot_url === 'string' && item.screenshot_url.startsWith('/'))
+            ? item.screenshot_url
+            : `/api/v1${item.screenshot_url}`;
+          out += `<div class="fb-ss-group">
+            <div class="fb-ss-header">
+              <span>Auto-screenshot</span>
+              <span class="ss-meta">
+                <button class="mini-btn" onclick="event.stopPropagation();window.open('${esc(autoSrc)}','_blank')" style="font-size:0.6rem;padding:0.2rem 0.4rem">Open</button>
+                <button class="mini-btn" onclick="event.stopPropagation();downloadScreenshot('${esc(autoSrc)}','auto_screenshot.jpg')" style="font-size:0.6rem;padding:0.2rem 0.4rem">Download</button>
+              </span>
+            </div>
+            <img src="${esc(autoSrc)}" alt="Auto screenshot" onclick="openLightbox('${esc(autoSrc)}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" loading="lazy" />
+            <div class="fb-ss-error" style="display:none">⚠️ Screenshot not available</div>
+          </div>`;
+        }
+        if (hasUser) {
+          const userSrc = (typeof item.user_screenshot_url === 'string' && item.user_screenshot_url.startsWith('/'))
+            ? item.user_screenshot_url
+            : `/api/v1${item.user_screenshot_url}`;
+          out += `<div class="fb-ss-group">
+            <div class="fb-ss-header">
+              <span>User-attached screenshot</span>
+              <span class="ss-meta">
+                <button class="mini-btn" onclick="event.stopPropagation();window.open('${esc(userSrc)}','_blank')" style="font-size:0.6rem;padding:0.2rem 0.4rem">Open</button>
+                <button class="mini-btn" onclick="event.stopPropagation();downloadScreenshot('${esc(userSrc)}','user_screenshot.jpg')" style="font-size:0.6rem;padding:0.2rem 0.4rem">Download</button>
+              </span>
+            </div>
+            <img src="${esc(userSrc)}" alt="User screenshot" onclick="openLightbox('${esc(userSrc)}')" onerror="this.style.display='none';this.nextElementSibling.style.display='block'" loading="lazy" />
+            <div class="fb-ss-error" style="display:none">⚠️ Screenshot not available</div>
+          </div>`;
+        }
+        return out;
+      })();
+
+      let extendedMeta = '';
+      if (item.feedback_type) extendedMeta += `<span>Type: ${esc(item.feedback_type)}</span>`;
+      if (item.url) extendedMeta += `<span>URL: <a href="${esc(item.url)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:underline">${esc(item.url.slice(0, 50))}${item.url.length > 50 ? '...' : ''}</a></span>`;
+      if (item.viewport_width && item.viewport_height) extendedMeta += `<span>Viewport: ${item.viewport_width}×${item.viewport_height}</span>`;
+      if (item.theme) extendedMeta += `<span>Theme: ${esc(item.theme)}</span>`;
+      if (item.language) extendedMeta += `<span>Lang: ${esc(item.language)}</span>`;
+      if (item.user_agent) extendedMeta += `<span title="${esc(item.user_agent)}">UA: ${esc(item.user_agent.slice(0, 40))}...</span>`;
+
       const payload = encodeURIComponent(JSON.stringify(item));
       return `<div class="fb-card ${unread ? 'unread' : ''}" data-filter="${esc(filterData)}" data-user="${esc(userKey)}" data-key="${itemKey}" data-item="${payload}" data-read="${item.read ? 'true' : 'false'}">
     <div class="fb-summary" onclick="toggleCard(this)">
@@ -1442,6 +1744,7 @@
     </div>
     <div class="fb-detail" style="display:none">
       <div class="fb-actions">
+        <button class="mini-btn" onclick="event.stopPropagation();aiSuggest(itemFromPayload('${payload}'))" title="AI auto-triage" style="background:linear-gradient(135deg, rgba(167,139,250,0.1), rgba(96,165,250,0.1));border-color:var(--violet)">🤖 AI Suggest</button>
         <button class="mini-btn" onclick="event.stopPropagation();copyFeedback(this, itemFromPayload('${payload}'))">Copy text</button>
         <button class="mini-btn" onclick="event.stopPropagation();markRead(itemFromPayload('${payload}'), ${item.read ? 'false' : 'true'})">${item.read ? 'Mark unread' : 'Mark read'}</button>
         <button class="mini-btn" onclick="event.stopPropagation();togglePin(this, itemFromPayload('${payload}'))">${item.pinned ? 'Unpin' : 'Pin'}</button>
@@ -1452,11 +1755,12 @@
       <div class="fb-detail-title">${esc(title)}</div>
       <div class="fb-detail-comment">${esc(item.comment || '')}</div>
       <div class="fb-detail-meta">
-        <span>&#x1f552; ${fmtTs(item.timestamp)}</span>
+        <span>🕒 ${fmtTs(item.timestamp)}</span>
         <span>Page: ${esc(pageId)}</span>
         <span>Section: ${esc(sectionId)}</span>
         ${item.anon_id ? '<span>ID: ' + esc(item.anon_id).slice(0, 12) + '…</span>' : ''}
         ${item.github_issue_url ? '<span>Issue: <a href="' + esc(item.github_issue_url) + '" target="_blank" rel="noopener" style="color:var(--emerald)">open</a></span>' : ''}
+        ${extendedMeta}
       </div>
       ${screenshotsHtml ? '<div class="fb-screenshots">' + screenshotsHtml + '</div>' : '<div style="font-size:0.7rem;color:var(--subtle);font-style:italic">No screenshots attached</div>'}
     </div>

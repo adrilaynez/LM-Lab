@@ -13,11 +13,15 @@ DELETE /api/v1/feedback/{page}/{section}/{basename} → delete feedback item
 
 import base64
 import hashlib
+import io
 import json
 import os
+import shutil
+import threading
 import time
 import urllib.error
 import urllib.request
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
@@ -36,6 +40,56 @@ from api.config import (
 
 router = APIRouter(tags=["feedback"])
 
+
+def _ai_triage_heuristic(title: str, comment: str, feedback_type: str | None) -> dict:
+    text = f"{title}\n{comment}".lower()
+    tags: list[str] = []
+
+    def has_any(*words: str) -> bool:
+        return any(w in text for w in words)
+
+    # Very lightweight tagging
+    if has_any("error", "exception", "traceback", "crash", "fails", "no funciona", "not working"):
+        tags.append("bug")
+    if has_any("ui", "button", "layout", "css", "responsive", "mobile", "tablet", "pantalla"):
+        tags.append("ui")
+    if has_any("slow", "lento", "performance", "lag"):
+        tags.append("performance")
+    if has_any("typo", "spelling", "ortografía"):
+        tags.append("typo")
+    if feedback_type and feedback_type.lower() in {"bug", "idea", "question"}:
+        tags.append(feedback_type.lower())
+
+    # Priority guess
+    priority = "medium"
+    if has_any("crash", "urgent", "urgente", "block", "bloquea"):
+        priority = "high"
+    elif has_any("minor", "pequeño", "cosmetic", "detalle"):
+        priority = "low"
+
+    # State suggestion
+    state = "triaged" if tags else "new"
+
+    summary = (title or "").strip() or (comment or "").strip().split("\n", 1)[0][:120]
+    if not summary:
+        summary = "Feedback"
+
+    # Deduplicate tags preserving order
+    seen = set()
+    deduped_tags = []
+    for t in tags:
+        if t in seen:
+            continue
+        seen.add(t)
+        deduped_tags.append(t)
+
+    return {
+        "state": state,
+        "tags": deduped_tags,
+        "priority": priority,
+        "summary": summary,
+    }
+
 # ---------------------------------------------------------------------------
 #  Storage — organized as data/feedback/{page_id}/{section_id}/{timestamp}.*
 # ---------------------------------------------------------------------------
@@ -44,6 +98,8 @@ FEEDBACK_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "feedbac
 FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
 ARCHIVED_FEEDBACK_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "feedback_archived"
 ARCHIVED_FEEDBACK_DIR.mkdir(parents=True, exist_ok=True)
+BACKUPS_DIR = Path(__file__).resolve().parent.parent.parent / "backups" / "feedback"
+BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
 
@@ -794,6 +850,287 @@ async def serve_screenshot(page: str, section: str, filename: str):
     else:
         media_type = "application/octet-stream"
     return FileResponse(img_path, media_type=media_type)
+
+
+@router.post("/feedback/sync-from-github")
+async def sync_feedbacks_from_github():
+    """Sincronizar feedbacks desde GitHub repo al backend local."""
+    missing: list[str] = []
+    if not GITHUB_TOKEN:
+        missing.append("GITHUB_TOKEN")
+    if not FEEDBACK_REPO_OWNER:
+        missing.append("FEEDBACK_REPO_OWNER")
+    if not FEEDBACK_REPO_NAME:
+        missing.append("FEEDBACK_REPO_NAME")
+    if not FEEDBACK_REPO_BRANCH:
+        missing.append("FEEDBACK_REPO_BRANCH")
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"GitHub sync not configured. Missing: {', '.join(missing)}",
+        )
+
+    try:
+        synced = 0
+        errors = []
+
+        # List all files in data/feedback directory from GitHub
+        api_url = f"https://api.github.com/repos/{FEEDBACK_REPO_OWNER}/{FEEDBACK_REPO_NAME}/git/trees/{FEEDBACK_REPO_BRANCH}?recursive=1"
+        req = urllib.request.Request(api_url, headers={
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "LM-Lab-Feedback",
+        })
+
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            tree_data = json.loads(resp.read().decode("utf-8"))
+
+        # Filter files under data/feedback/
+        feedback_files = [
+            item for item in tree_data.get("tree", [])
+            if item["type"] == "blob" and item["path"].startswith("data/feedback/")
+        ]
+
+        for file_item in feedback_files:
+            try:
+                file_path = file_item["path"]
+                # Download file content
+                content_url = f"https://api.github.com/repos/{FEEDBACK_REPO_OWNER}/{FEEDBACK_REPO_NAME}/contents/{file_path}?ref={FEEDBACK_REPO_BRANCH}"
+                content_req = urllib.request.Request(content_url, headers={
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "LM-Lab-Feedback",
+                })
+
+                with urllib.request.urlopen(content_req, timeout=10) as content_resp:
+                    content_data = json.loads(content_resp.read().decode("utf-8"))
+
+                file_content = base64.b64decode(content_data["content"])
+
+                # Write to local filesystem
+                local_path = Path(__file__).resolve().parent.parent.parent / file_path
+                local_path.parent.mkdir(parents=True, exist_ok=True)
+                local_path.write_bytes(file_content)
+                synced += 1
+            except Exception as e:
+                errors.append({"file": file_path, "error": str(e)})
+
+        return {
+            "ok": True,
+            "synced": synced,
+            "total": len(feedback_files),
+            "errors": errors[:10],  # Limit error list
+        }
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"GitHub sync failed: {e}")
+
+
+def _create_export_zip() -> io.BytesIO:
+    """Helper para crear ZIP de export."""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        # Add active feedbacks
+        for page_dir in FEEDBACK_DIR.iterdir():
+            if not page_dir.is_dir():
+                continue
+            for section_dir in page_dir.iterdir():
+                if not section_dir.is_dir():
+                    continue
+                for file in section_dir.iterdir():
+                    if not file.is_file():
+                        continue
+                    arc_name = f"active/{page_dir.name}/{section_dir.name}/{file.name}"
+                    zipf.write(file, arc_name)
+
+        # Add archived feedbacks
+        for page_dir in ARCHIVED_FEEDBACK_DIR.iterdir():
+            if not page_dir.is_dir():
+                continue
+            for section_dir in page_dir.iterdir():
+                if not section_dir.is_dir():
+                    continue
+                for file in section_dir.iterdir():
+                    if not file.is_file():
+                        continue
+                    arc_name = f"archived/{page_dir.name}/{section_dir.name}/{file.name}"
+                    zipf.write(file, arc_name)
+    zip_buffer.seek(0)
+    return zip_buffer
+
+
+def _auto_export_daily():
+    """Background task: auto-export feedbacks cada día a las 3am UTC."""
+    try:
+        import schedule  # type: ignore
+    except Exception as e:
+        print(f"⚠️ Auto-export disabled (missing optional dependency 'schedule'): {e}")
+        return
+    
+    def do_export():
+        try:
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            zip_path = BACKUPS_DIR / f"feedbacks_export_{timestamp}.zip"
+            zip_buffer = _create_export_zip()
+            zip_path.write_bytes(zip_buffer.read())
+            print(f"✅ Auto-export completado: {zip_path}")
+            
+            # Cleanup: mantener solo últimos 7 backups
+            backups = sorted(BACKUPS_DIR.glob("feedbacks_export_*.zip"), reverse=True)
+            for old_backup in backups[7:]:
+                old_backup.unlink()
+                print(f"🗑️ Eliminado backup antiguo: {old_backup.name}")
+        except Exception as e:
+            print(f"❌ Auto-export failed: {e}")
+    
+    schedule.every().day.at("03:00").do(do_export)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
+
+# Iniciar auto-export thread
+if os.getenv("FEEDBACK_AUTO_EXPORT", "0") == "1":
+    _export_thread = threading.Thread(target=_auto_export_daily, daemon=True)
+    _export_thread.start()
+else:
+    _export_thread = None
+
+
+@router.get("/feedback/export")
+async def export_all_feedbacks():
+    """Export todos los feedbacks como ZIP (JSON + screenshots)."""
+    zip_buffer = _create_export_zip()
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    from fastapi.responses import StreamingResponse
+    return StreamingResponse(
+        io.BytesIO(zip_buffer.read()),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=feedbacks_export_{timestamp}.zip"}
+    )
+
+
+@router.post("/feedback/ai-triage")
+async def ai_triage_feedback(payload: dict):
+    """AI auto-triage: clasifica feedback usando LM-Lab."""
+    page_id = payload.get("page_id")
+    section_id = payload.get("section_id")
+    basename = payload.get("basename")
+    
+    if not all([page_id, section_id, basename]):
+        raise HTTPException(status_code=400, detail="Missing required fields")
+    
+    # Read feedback
+    feedback_path = _resolve_feedback_path(page_id, section_id, basename, archived=payload.get("archived", False))
+    if not feedback_path or not feedback_path.exists():
+        raise HTTPException(status_code=404, detail="Feedback not found")
+    
+    feedback_data = json.loads(feedback_path.read_text(encoding="utf-8"))
+    title = feedback_data.get("title", "")
+    comment = feedback_data.get("comment", "")
+    feedback_type = feedback_data.get("feedback_type", "")
+    
+    # Heuristic triage (safe fallback). If you later expose a real LLM helper,
+    # we can swap this to a model-backed implementation.
+    suggestions = _ai_triage_heuristic(title=title, comment=comment, feedback_type=feedback_type)
+    return {
+        "ok": True,
+        "suggestions": suggestions,
+        "model": "heuristic",
+    }
+
+
+@router.get("/feedback/analytics")
+async def feedback_analytics():
+    """Analytics dashboard: estadísticas completas."""
+    all_items = []
+    
+    # Active feedbacks
+    for page_dir in FEEDBACK_DIR.iterdir():
+        if not page_dir.is_dir():
+            continue
+        for section_dir in page_dir.iterdir():
+            if not section_dir.is_dir():
+                continue
+            for json_file in section_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text(encoding="utf-8"))
+                    data["archived"] = False
+                    all_items.append(data)
+                except:
+                    pass
+    
+    # Archived feedbacks
+    for page_dir in ARCHIVED_FEEDBACK_DIR.iterdir():
+        if not page_dir.is_dir():
+            continue
+        for section_dir in page_dir.iterdir():
+            if not section_dir.is_dir():
+                continue
+            for json_file in section_dir.glob("*.json"):
+                try:
+                    data = json.loads(json_file.read_text(encoding="utf-8"))
+                    data["archived"] = True
+                    all_items.append(data)
+                except:
+                    pass
+    
+    # Calcular stats
+    total = len(all_items)
+    by_state = {}
+    by_type = {}
+    by_page = {}
+    all_tags = []
+    unread_count = 0
+    
+    for item in all_items:
+        # State
+        state = item.get("state", "new")
+        by_state[state] = by_state.get(state, 0) + 1
+        
+        # Type
+        ftype = item.get("feedback_type", "unknown")
+        by_type[ftype] = by_type.get(ftype, 0) + 1
+        
+        # Page
+        page = item.get("page_id", "unknown")
+        by_page[page] = by_page.get(page, 0) + 1
+        
+        # Tags
+        tags = item.get("tags", [])
+        all_tags.extend(tags)
+        
+        # Unread
+        if not item.get("read", False):
+            unread_count += 1
+    
+    # Top tags
+    from collections import Counter
+    tag_counts = Counter(all_tags)
+    top_tags = [{
+        "tag": tag,
+        "count": count
+    } for tag, count in tag_counts.most_common(10)]
+    
+    return {
+        "total": total,
+        "unread": unread_count,
+        "by_state": by_state,
+        "by_type": by_type,
+        "by_page": by_page,
+        "top_tags": top_tags,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@router.get("/feedback/dashboard", response_class=HTMLResponse)
+async def feedback_analytics_dashboard():
+    """Serve the analytics dashboard."""
+    html_path = TEMPLATE_DIR / "feedback_analytics.html"
+    if not html_path.exists():
+        raise HTTPException(status_code=500, detail="Analytics dashboard not found")
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
 
 @router.get("/feedback/viewer", response_class=HTMLResponse)
