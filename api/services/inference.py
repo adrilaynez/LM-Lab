@@ -614,6 +614,27 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
     SMOOTHING_ALPHA = 1.0
     CORPUS_NAME = "Paul Graham Essays"
 
+    # Prefer val loss if present; else smooth train loss using a short moving window
+    train_loss_history = model_stats.get("loss_history", [])
+    val_loss_history = model_stats.get("val_loss_history")
+    final_val_loss = model_stats.get("final_val_loss")
+
+    def _moving_average(values: list[float], window: int) -> float | None:
+        if not values:
+            return None
+        w = min(window, len(values))
+        return sum(values[-w:]) / w
+
+    smoothed_train_final = _moving_average(train_loss_history, window=5)
+    display_final_loss = final_val_loss if final_val_loss is not None else smoothed_train_final
+    if display_final_loss is None:
+        display_final_loss = stored_final_loss
+
+    # Make perplexity consistent with the displayed loss
+    if display_final_loss is not None:
+        import math
+        stored_perplexity = round(math.exp(display_final_loss), 4)
+
     training = {
         "total_tokens": model_stats.get("total_tokens"),
         "unique_chars": model_stats.get("unique_chars"),
@@ -622,9 +643,13 @@ def run_ngram_inference(text: str, context_size: int, top_k: int = 10) -> dict:
         "context_utilization": stored_utilization,
         "sparsity": model_stats.get("sparsity"),
         "transition_density": model_stats.get("transition_density"),
-        "final_loss": stored_final_loss,
+        "loss_history": train_loss_history,
+        "train_loss_history": train_loss_history,
+        "val_loss_history": val_loss_history,
+        "final_loss": display_final_loss,
+        "final_train_loss": stored_final_loss,
+        "final_val_loss": final_val_loss,
         "perplexity": stored_perplexity,
-        "loss_history": model_stats.get("loss_history", []),
         "smoothing_alpha": SMOOTHING_ALPHA,
         "corpus_name": CORPUS_NAME,
     }

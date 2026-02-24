@@ -1,0 +1,1524 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feedback Viewer — LM Lab</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0a0a0f;
+      --card: #111118;
+      --card2: #161622;
+      --border: rgba(255, 255, 255, 0.08);
+      --text: #e5e5e5;
+      --muted: rgba(255, 255, 255, 0.5);
+      --subtle: rgba(255, 255, 255, 0.25);
+      --emerald: #34d399;
+      --blue: #60a5fa;
+      --rose: #fb7185;
+      --violet: #a78bfa;
+      --amber: #fbbf24;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .header .count {
+      font-size: 0.7rem;
+      color: var(--subtle);
+      font-family: monospace;
+      margin-top: 0.25rem;
+    }
+
+    .header .count-row {
+      display: flex;
+      gap: 0.7rem;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 0.2rem;
+    }
+
+    .count-pill {
+      font-size: 0.62rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      padding: 0.14rem 0.45rem;
+      color: var(--muted);
+      font-family: monospace;
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .count-pill.unread {
+      color: var(--blue);
+      border-color: rgba(96, 165, 250, 0.35);
+      background: rgba(96, 165, 250, 0.08);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .select-input {
+      min-width: 170px;
+      padding: 0.48rem 0.65rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      font-size: 0.75rem;
+      outline: none;
+    }
+
+    .search-input {
+      min-width: 220px;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+      font-size: 0.75rem;
+      outline: none;
+    }
+
+    .search-input:focus {
+      border-color: rgba(96, 165, 250, 0.45);
+    }
+
+    .search-input::placeholder {
+      color: var(--subtle);
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .btn:hover {
+      border-color: rgba(255, 255, 255, 0.2);
+      color: var(--text);
+    }
+
+    .btn.loading svg {
+      animation: spin 1s linear infinite;
+    }
+
+    .btn-danger {
+      border-color: rgba(251, 113, 133, 0.3);
+      color: var(--rose);
+    }
+
+    .btn-danger:hover {
+      background: rgba(251, 113, 133, 0.1);
+    }
+
+    .btn-good {
+      border-color: rgba(52, 211, 153, 0.35);
+      color: var(--emerald);
+    }
+
+    .btn-good:hover {
+      background: rgba(52, 211, 153, 0.1);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 0.9rem;
+      padding: 0.65rem 0.7rem;
+      border-radius: 0.85rem;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .toolbar .muted {
+      color: var(--subtle);
+      font-size: 0.68rem;
+      font-family: monospace;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .center-msg {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 5rem 0;
+      color: var(--subtle);
+    }
+
+    .error-box {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(251, 113, 133, 0.2);
+      background: rgba(251, 113, 133, 0.06);
+      color: #fca5a5;
+      font-size: 0.875rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* Page group */
+    .page-group {
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .page-group[data-accent="emerald"] {
+      border-color: rgba(52, 211, 153, 0.2);
+      background: rgba(52, 211, 153, 0.03);
+    }
+
+    .page-group[data-accent="blue"] {
+      border-color: rgba(96, 165, 250, 0.2);
+      background: rgba(96, 165, 250, 0.03);
+    }
+
+    .page-group[data-accent="rose"] {
+      border-color: rgba(251, 113, 133, 0.2);
+      background: rgba(251, 113, 133, 0.03);
+    }
+
+    .page-group[data-accent="violet"] {
+      border-color: rgba(167, 139, 250, 0.2);
+      background: rgba(167, 139, 250, 0.03);
+    }
+
+    .page-group[data-accent="amber"] {
+      border-color: rgba(251, 191, 36, 0.2);
+      background: rgba(251, 191, 36, 0.03);
+    }
+
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      cursor: pointer;
+      user-select: none;
+      width: 100%;
+      border: none;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      padding: 0;
+    }
+
+    .toggle-btn h2 {
+      font-size: 1rem;
+      font-weight: 700;
+    }
+
+    .toggle-btn .meta {
+      font-size: 0.65rem;
+      font-family: monospace;
+      color: var(--subtle);
+    }
+
+    .chev {
+      width: 1rem;
+      height: 1rem;
+      transition: transform 0.2s;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .chev.open {
+      transform: rotate(90deg);
+    }
+
+    .section-group {
+      margin-top: 1rem;
+      margin-left: 0.5rem;
+    }
+
+    .sec-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+      user-select: none;
+      border: none;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      padding: 0.25rem 0;
+    }
+
+    .sec-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .sec-name {
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .sec-count {
+      font-size: 0.6rem;
+      font-family: monospace;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.25rem;
+    }
+
+    /* Cards list */
+    .cards {
+      margin-left: 1.25rem;
+      margin-top: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    /* Feedback card — collapsed (summary row) */
+    .fb-card {
+      border-radius: 0.75rem;
+      border: 1px solid var(--border);
+      background: var(--card);
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .fb-card.unread {
+      border-color: rgba(96, 165, 250, 0.3);
+      box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.08);
+    }
+
+    .fb-card:hover {
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .fb-card.expanded {
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: 0 4px 24px -8px rgba(0, 0, 0, 0.4);
+    }
+
+    .fb-summary {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .fb-summary:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .fb-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      flex-shrink: 0;
+      color: var(--muted);
+    }
+
+    .fb-select {
+      width: 14px;
+      height: 14px;
+      accent-color: #60a5fa;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .unread-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--blue);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.12);
+      flex-shrink: 0;
+    }
+
+    .fb-summary-text {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .fb-summary-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+    }
+
+    .fb-name {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.75);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .fb-title-inline,
+    .fb-title-strong {
+      font-size: 0.92rem;
+      color: var(--text);
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .fb-title-strong {
+      margin-bottom: 0.2rem;
+    }
+
+    .fb-meta-right {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+
+    .fb-preview {
+      font-size: 0.72rem;
+      color: var(--subtle);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 0.15rem;
+    }
+
+    .fb-badges {
+      display: flex;
+      gap: 0.35rem;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .badge {
+      font-size: 0.55rem;
+      font-family: monospace;
+      padding: 0.15rem 0.4rem;
+      border-radius: 0.25rem;
+    }
+
+    .badge-img {
+      background: rgba(96, 165, 250, 0.12);
+      color: var(--blue);
+    }
+
+    .badge-user-img {
+      background: rgba(167, 139, 250, 0.12);
+      color: var(--violet);
+    }
+
+    .badge-unread {
+      background: rgba(96, 165, 250, 0.15);
+      color: var(--blue);
+    }
+
+    .fb-time {
+      font-size: 0.6rem;
+      font-family: monospace;
+      color: var(--subtle);
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .fb-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .mini-btn {
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      border-radius: 0.55rem;
+      font-size: 0.65rem;
+      font-family: monospace;
+      padding: 0.3rem 0.55rem;
+      cursor: pointer;
+    }
+
+    .mini-btn:hover {
+      color: var(--text);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .mini-btn.warn {
+      color: var(--amber);
+      border-color: rgba(251, 191, 36, 0.3);
+    }
+
+    .mini-btn.danger {
+      color: var(--rose);
+      border-color: rgba(251, 113, 133, 0.35);
+    }
+
+    .mini-btn.good {
+      color: var(--emerald);
+      border-color: rgba(52, 211, 153, 0.35);
+    }
+
+    /* Feedback card — expanded detail */
+    .fb-detail {
+      padding: 0 1rem 1rem 1rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .fb-detail-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--text);
+      margin: 0.75rem 0 0.35rem;
+    }
+
+    .fb-detail-comment {
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.8);
+      line-height: 1.7;
+      white-space: pre-wrap;
+      margin-bottom: 0.75rem;
+    }
+
+    .fb-detail-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      font-size: 0.65rem;
+      font-family: monospace;
+      color: var(--subtle);
+      margin-bottom: 0.75rem;
+    }
+
+    /* Screenshots in expanded view */
+    .fb-screenshots {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .fb-ss-group {
+      border-radius: 0.5rem;
+      border: 1px solid var(--border);
+      overflow: hidden;
+      background: var(--card2);
+    }
+
+    .fb-ss-header {
+      font-size: 0.65rem;
+      font-family: monospace;
+      color: var(--muted);
+      padding: 0.4rem 0.75rem;
+      background: rgba(255, 255, 255, 0.02);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .fb-ss-group img {
+      width: 100%;
+      height: auto;
+      display: block;
+      cursor: pointer;
+      opacity: 0.9;
+      transition: opacity 0.2s;
+    }
+
+    .fb-ss-group img:hover {
+      opacity: 1;
+    }
+
+    .fb-ss-error {
+      padding: 1rem;
+      font-size: 0.75rem;
+      color: var(--subtle);
+      text-align: center;
+      font-style: italic;
+    }
+
+    /* Lightbox */
+    .lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: rgba(0, 0, 0, 0.88);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .lightbox img {
+      max-width: 94vw;
+      max-height: 94vh;
+      border-radius: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .lightbox.hidden {
+      display: none;
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      background: rgba(0, 0, 0, 0.66);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .modal-overlay.hidden {
+      display: none;
+    }
+
+    .modal {
+      width: min(760px, 96vw);
+      max-height: 92vh;
+      overflow: auto;
+      border-radius: 1rem;
+      border: 1px solid var(--border);
+      background: #0f111a;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+    }
+
+    .modal h3 {
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+
+    .field-row {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .field-row>div {
+      flex: 1;
+      min-width: 180px;
+    }
+
+    .modal label {
+      font-size: 0.65rem;
+      color: var(--subtle);
+      display: block;
+      margin-bottom: 0.2rem;
+      font-family: monospace;
+    }
+
+    .modal input,
+    .modal textarea {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 0.6rem;
+      padding: 0.5rem 0.6rem;
+      font-family: inherit;
+      font-size: 0.75rem;
+    }
+
+    .modal textarea {
+      min-height: 170px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    .modal-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.45rem;
+      justify-content: flex-end;
+    }
+
+    .status-note {
+      font-size: 0.68rem;
+      color: var(--subtle);
+      font-family: monospace;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      border: 1px dashed var(--border);
+      border-radius: 0.55rem;
+      padding: 0.55rem;
+    }
+
+    /* Accent colors */
+    [data-accent="emerald"] .toggle-btn h2 {
+      color: var(--emerald);
+    }
+
+    [data-accent="blue"] .toggle-btn h2 {
+      color: var(--blue);
+    }
+
+    [data-accent="rose"] .toggle-btn h2 {
+      color: var(--rose);
+    }
+
+    [data-accent="violet"] .toggle-btn h2 {
+      color: var(--violet);
+    }
+
+    [data-accent="amber"] .toggle-btn h2 {
+      color: var(--amber);
+    }
+
+    [data-accent="emerald"] .sec-dot {
+      background: var(--emerald);
+    }
+
+    [data-accent="blue"] .sec-dot {
+      background: var(--blue);
+    }
+
+    [data-accent="rose"] .sec-dot {
+      background: var(--rose);
+    }
+
+    [data-accent="violet"] .sec-dot {
+      background: var(--violet);
+    }
+
+    [data-accent="amber"] .sec-dot {
+      background: var(--amber);
+    }
+
+    [data-accent="emerald"] .sec-count {
+      background: rgba(52, 211, 153, 0.1);
+      color: var(--emerald);
+    }
+
+    [data-accent="blue"] .sec-count {
+      background: rgba(96, 165, 250, 0.1);
+      color: var(--blue);
+    }
+
+    [data-accent="rose"] .sec-count {
+      background: rgba(251, 113, 133, 0.1);
+      color: var(--rose);
+    }
+
+    [data-accent="violet"] .sec-count {
+      background: rgba(167, 139, 250, 0.1);
+      color: var(--violet);
+    }
+
+    [data-accent="amber"] .sec-count {
+      background: rgba(251, 191, 36, 0.1);
+      color: var(--amber);
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>&#x1f4ac; Feedback Viewer</h1>
+        <div class="count-row">
+          <div class="count" id="total-count">Loading...</div>
+          <div class="count-pill unread" id="unread-count">Unread: --</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <select id="sort-mode" class="select-input" onchange="loadData()">
+          <option value="folder">Sort: by folder</option>
+          <option value="date">Sort: by date (global)</option>
+        </select>
+        <select id="unread-filter" class="select-input" onchange="applyFilter()">
+          <option value="all">Show: all</option>
+          <option value="unread">Show: unread only</option>
+          <option value="read">Show: read only</option>
+        </select>
+        <input id="search-input" class="search-input" placeholder="Filter by page/section/name/title/comment"
+          oninput="applyFilter()" />
+        <button class="btn" id="expand-all-btn" onclick="expandAll()">Expand all</button>
+        <button class="btn" id="collapse-all-btn" onclick="collapseAll()">Collapse all</button>
+        <button class="btn" id="refresh-btn" onclick="loadData()">
+          <svg style="width:14px;height:14px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+          </svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn" onclick="toggleSelectVisible(true)">Select visible</button>
+      <button class="btn" onclick="toggleSelectAllLoaded(true)">Select all</button>
+      <button class="btn" onclick="clearSelection()">Clear selection</button>
+      <span class="muted" id="selected-count">0 selected</span>
+      <button class="btn btn-good" id="bulk-read-btn" onclick="runBulkAction('read')">Mark selected read</button>
+      <button class="btn" id="bulk-unread-btn" onclick="runBulkAction('unread')">Mark selected unread</button>
+      <button class="btn btn-good" id="bulk-archive-btn" onclick="runBulkAction('archive')">Archive selected</button>
+      <button class="btn" id="bulk-unarchive-btn" onclick="runBulkAction('unarchive')">Restore selected</button>
+      <button class="btn btn-danger" id="bulk-delete-btn" onclick="runBulkAction('delete', true)">Delete
+        selected</button>
+    </div>
+
+    <div id="content"></div>
+  </div>
+
+  <div class="lightbox hidden" id="lightbox" onclick="this.classList.add('hidden')">
+    <img id="lightbox-img" src="" alt="Full screenshot" />
+  </div>
+
+  <div class="modal-overlay hidden" id="issue-modal-overlay" onclick="closeIssueModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <h3>Convert feedback to GitHub issue</h3>
+      <div class="field-row">
+        <div>
+          <label for="issue-repo-owner">Repository owner</label>
+          <input id="issue-repo-owner" placeholder="your-org" />
+        </div>
+        <div>
+          <label for="issue-repo-name">Repository name</label>
+          <input id="issue-repo-name" placeholder="your-repo" />
+        </div>
+      </div>
+      <div class="field-row">
+        <div>
+          <label for="issue-labels">Labels (comma separated)</label>
+          <input id="issue-labels" placeholder="feedback, bug" />
+        </div>
+        <div>
+          <label for="issue-assignees">Assignees (comma separated)</label>
+          <input id="issue-assignees" placeholder="username1, username2" />
+        </div>
+      </div>
+      <div>
+        <label for="issue-title">Issue title</label>
+        <input id="issue-title" />
+      </div>
+      <div>
+        <label for="issue-body">Issue body (auto-filled, editable)</label>
+        <textarea id="issue-body"></textarea>
+      </div>
+      <div class="status-note" id="issue-status">Ready.</div>
+      <div class="modal-actions">
+        <button class="btn" onclick="copyIssueDraft()">Copy draft</button>
+        <button class="btn" onclick="closeIssueModal()">Cancel</button>
+        <button class="btn btn-good" onclick="submitIssue()">Create issue</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const PAGE_META = {
+      bigram: { label: 'Bigram', accent: 'emerald' },
+      ngram: { label: 'N-gram', accent: 'blue' },
+      'neural-networks': { label: 'Neural Networks', accent: 'rose' },
+      mlp: { label: 'MLP', accent: 'violet' },
+      transformer: { label: 'Transformer', accent: 'amber' },
+      archived: { label: 'Archived', accent: 'amber' },
+    };
+    const PAGE_ORDER = ['bigram', 'ngram', 'neural-networks', 'mlp', 'transformer'];
+    const selectedKeys = new Set();
+    let loadedItems = [];
+    let issueItem = null;
+
+    function esc(s) { if (!s) return ''; const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function sortMode() { return document.getElementById('sort-mode')?.value || 'folder'; }
+    function unreadMode() { return document.getElementById('unread-filter')?.value || 'all'; }
+    function keyForItem(item) {
+      return encodeURIComponent(JSON.stringify({
+        page_id: item.page_id,
+        section_id: item.section_id,
+        basename: item.basename,
+        archived: Boolean(item.archived),
+      }));
+    }
+    function parseKey(key) {
+      try { return JSON.parse(decodeURIComponent(key)); } catch { return null; }
+    }
+
+    function fmtTs(ts) {
+      if (!ts || ts.length < 15) return ts || 'Unknown';
+      return ts.slice(0, 4) + '-' + ts.slice(4, 6) + '-' + ts.slice(6, 8) + ' ' + ts.slice(9, 11) + ':' + ts.slice(11, 13) + ':' + ts.slice(13, 15) + ' UTC';
+    }
+
+    function shortTs(ts) {
+      if (!ts || ts.length < 13) return '';
+      return ts.slice(6, 8) + '/' + ts.slice(4, 6) + ' ' + ts.slice(9, 11) + ':' + ts.slice(11, 13);
+    }
+
+    function itemFromPayload(payload) {
+      try {
+        return JSON.parse(decodeURIComponent(payload));
+      } catch {
+        return null;
+      }
+    }
+
+    function openLightbox(src) {
+      document.getElementById('lightbox-img').src = src;
+      document.getElementById('lightbox').classList.remove('hidden');
+    }
+
+    function itemSort(a, b) {
+      const pinA = Boolean(a.pinned), pinB = Boolean(b.pinned);
+      if (pinA !== pinB) return pinA ? -1 : 1;
+      return (b.timestamp || '').localeCompare(a.timestamp || '');
+    }
+
+    function flattenPages(pages) {
+      const out = [];
+      for (const [pageId, sections] of Object.entries(pages || {})) {
+        for (const [sectionId, items] of Object.entries(sections || {})) {
+          for (const item of items || []) {
+            out.push({ ...item, page_id: item.page_id || pageId, section_id: item.section_id || sectionId });
+          }
+        }
+      }
+      out.sort(itemSort);
+      return out;
+    }
+
+    function allItemsFromTree(pages, archivedPages) {
+      return [...flattenPages(pages), ...flattenPages(archivedPages).map(item => ({ ...item, archived: true }))];
+    }
+
+    async function apiAction(path, method, payload) {
+      const res = await fetch(path, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: payload ? JSON.stringify(payload) : undefined,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${text || 'Action failed'}`);
+      }
+      return res.json().catch(() => ({}));
+    }
+
+    function updateToolbarState() {
+      const count = selectedKeys.size;
+      document.getElementById('selected-count').textContent = `${count} selected`;
+      [
+        'bulk-read-btn',
+        'bulk-unread-btn',
+        'bulk-archive-btn',
+        'bulk-unarchive-btn',
+        'bulk-delete-btn',
+      ].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = count === 0;
+      });
+    }
+
+    function keepSelectionValid() {
+      const valid = new Set(loadedItems.map(keyForItem));
+      for (const key of Array.from(selectedKeys)) {
+        if (!valid.has(key)) selectedKeys.delete(key);
+      }
+      updateToolbarState();
+    }
+
+    function recalcUnreadCount() {
+      const unread = loadedItems.filter(item => !item.read).length;
+      document.getElementById('unread-count').textContent = `Unread: ${unread}`;
+    }
+
+    function setCardReadState(item, read) {
+      const card = document.querySelector(`.fb-card[data-key="${keyForItem(item)}"]`);
+      if (!card) return;
+      card.setAttribute('data-read', read ? 'true' : 'false');
+      card.classList.toggle('unread', !read);
+      if (read) {
+        card.querySelector('.badge-unread')?.remove();
+        card.querySelector('.unread-dot')?.remove();
+      }
+      const idx = loadedItems.findIndex(i => keyForItem(i) === keyForItem(item));
+      if (idx >= 0) loadedItems[idx].read = read;
+      recalcUnreadCount();
+      applyFilter();
+    }
+
+    async function markRead(item, read, silent = false) {
+      if (!item) return;
+      try {
+        await apiAction('/api/v1/feedback/read', 'POST', {
+          page_id: item.page_id,
+          section_id: item.section_id,
+          basename: item.basename,
+          archived: Boolean(item.archived),
+          read: Boolean(read),
+        });
+        setCardReadState(item, Boolean(read));
+      } catch (e) {
+        if (!silent) alert(`Could not update read state: ${e.message || e}`);
+      }
+    }
+
+    async function archiveItem(btn, item) {
+      if (!item) return;
+      btn.disabled = true;
+      try {
+        if (item.archived) {
+          await apiAction('/api/v1/feedback/unarchive', 'POST', item);
+        } else {
+          await apiAction('/api/v1/feedback/archive', 'POST', item);
+        }
+        await loadData();
+      } catch (e) {
+        alert(`Archive action failed: ${e.message || e}`);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function selectedItems() {
+      return Array.from(selectedKeys)
+        .map(parseKey)
+        .filter(Boolean);
+    }
+
+    async function runBulkAction(action, withConfirm = false) {
+      const items = selectedItems();
+      if (!items.length) {
+        alert('No feedback selected');
+        return;
+      }
+      if (withConfirm && !confirm(`Apply '${action}' to ${items.length} selected feedback item(s)?`)) return;
+
+      try {
+        const result = await apiAction('/api/v1/feedback/bulk', 'POST', { action, items });
+        if (result.failed && result.failed.length) {
+          const detail = result.failed.slice(0, 4).map((f) => `- ${f.item}: ${f.error}`).join('\n');
+          alert(`${result.message}\n\nSome items failed:\n${detail}`);
+        }
+        clearSelection();
+        await loadData();
+      } catch (e) {
+        alert(`Bulk action failed: ${e.message || e}`);
+      }
+    }
+
+    function toggleSelectVisible(select) {
+      document.querySelectorAll('.fb-card').forEach((card) => {
+        if (card.style.display === 'none') return;
+        const key = card.getAttribute('data-key');
+        if (!key) return;
+        const cb = card.querySelector('.fb-select');
+        if (cb) cb.checked = Boolean(select);
+        if (select) selectedKeys.add(key); else selectedKeys.delete(key);
+      });
+      updateToolbarState();
+    }
+
+    function toggleSelectAllLoaded(select) {
+      loadedItems.forEach((item) => {
+        const key = keyForItem(item);
+        if (select) selectedKeys.add(key); else selectedKeys.delete(key);
+      });
+      document.querySelectorAll('.fb-select').forEach((cb) => {
+        cb.checked = Boolean(select);
+      });
+      updateToolbarState();
+    }
+
+    function clearSelection() {
+      selectedKeys.clear();
+      document.querySelectorAll('.fb-select').forEach((cb) => {
+        cb.checked = false;
+      });
+      updateToolbarState();
+    }
+
+    function toggleCardSelection(ev, key) {
+      ev.stopPropagation();
+      if (ev.target.checked) selectedKeys.add(key);
+      else selectedKeys.delete(key);
+      updateToolbarState();
+    }
+
+    async function deleteItem(btn, item) {
+      if (!item) return;
+      if (!confirm('Delete this feedback permanently?')) return;
+      btn.disabled = true;
+      try {
+        const q = item.archived ? '?archived=true' : '';
+        await apiAction(`/api/v1/feedback/${encodeURIComponent(item.page_id)}/${encodeURIComponent(item.section_id)}/${encodeURIComponent(item.basename)}${q}`, 'DELETE');
+        await loadData();
+      } catch (e) {
+        alert(`Delete failed: ${e.message || e}`);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function togglePin(btn, item) {
+      if (!item) return;
+      btn.disabled = true;
+      try {
+        await apiAction('/api/v1/feedback/pin', 'POST', {
+          page_id: item.page_id,
+          section_id: item.section_id,
+          basename: item.basename,
+          archived: Boolean(item.archived),
+        });
+        await loadData();
+      } catch (e) {
+        alert(`Pin action failed: ${e.message || e}`);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function copyFeedback(btn, item) {
+      if (!item) return;
+      const payload = [
+        `[${item.page_id}/${item.section_id}] ${item.title || '(No title)'}`,
+        `By: ${item.name || 'Anonymous'}`,
+        `At: ${fmtTs(item.timestamp)}`,
+        '',
+        item.comment || '',
+      ].join('\n');
+      try {
+        await navigator.clipboard.writeText(payload);
+        const prev = btn.textContent;
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = prev; }, 1000);
+      } catch {
+        alert('Could not copy to clipboard');
+      }
+    }
+
+    function toggleCard(el) {
+      const card = el.closest('.fb-card');
+      const detail = card.querySelector('.fb-detail');
+      if (card.classList.contains('expanded')) {
+        card.classList.remove('expanded');
+        detail.style.display = 'none';
+      } else {
+        card.classList.add('expanded');
+        detail.style.display = '';
+        if (card.getAttribute('data-read') !== 'true') {
+          const item = itemFromPayload(card.getAttribute('data-item') || '');
+          if (item) markRead(item, true, true);
+        }
+      }
+    }
+
+    function collapseAll() {
+      document.querySelectorAll('.fb-card.expanded').forEach(c => {
+        c.classList.remove('expanded');
+        c.querySelector('.fb-detail').style.display = 'none';
+      });
+    }
+
+    function expandAll() {
+      document.querySelectorAll('.fb-card').forEach(c => {
+        c.classList.add('expanded');
+        c.querySelector('.fb-detail').style.display = '';
+      });
+    }
+
+    function applyFilter() {
+      const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+      const unread = unreadMode();
+      const cards = document.querySelectorAll('.fb-card');
+      cards.forEach(card => {
+        const haystack = (card.getAttribute('data-filter') || '').toLowerCase();
+        const isRead = card.getAttribute('data-read') === 'true';
+        const unreadOk = unread === 'all' || (unread === 'read' && isRead) || (unread === 'unread' && !isRead);
+        card.style.display = (!q || haystack.includes(q)) && unreadOk ? '' : 'none';
+      });
+
+      document.querySelectorAll('.section-group').forEach(sec => {
+        const visibleInSection = Array.from(sec.querySelectorAll('.fb-card')).some(c => c.style.display !== 'none');
+        sec.style.display = visibleInSection ? '' : 'none';
+      });
+
+      document.querySelectorAll('.page-group').forEach(pg => {
+        const visibleInPage = Array.from(pg.querySelectorAll('.section-group')).some(s => s.style.display !== 'none');
+        pg.style.display = visibleInPage ? '' : 'none';
+      });
+
+      updateToolbarState();
+    }
+
+    function buildIssueDraft(item) {
+      const title = `[Feedback] ${item.page_id}/${item.section_id}: ${item.title || '(No title)'}`;
+      const body = [
+        '## Feedback report',
+        '',
+        `- Page: \`${item.page_id}\``,
+        `- Section: \`${item.section_id}\``,
+        `- Timestamp (UTC): \`${item.timestamp || 'unknown'}\``,
+        `- Reporter: \`${item.name || 'Anonymous'}\``,
+        `- Archived: \`${Boolean(item.archived)}\``,
+        '',
+        '### Title',
+        item.title || '(No title)',
+        '',
+        '### Comment',
+        item.comment || '',
+        '',
+        '### Metadata',
+        `- Feedback key: \`${item.page_id}/${item.section_id}/${item.basename}\``,
+        `- Anonymous ID: \`${item.anon_id || 'n/a'}\``,
+        '',
+        '### Attachments',
+        `- User screenshot: ${item.has_user_screenshot ? 'yes' : 'no'}`,
+        `- Auto screenshot: ${item.has_screenshot ? 'yes' : 'no'}`,
+      ].join('\n');
+      return { title, body };
+    }
+
+    function openIssueModal(item) {
+      issueItem = item;
+      const draft = buildIssueDraft(item);
+      document.getElementById('issue-title').value = draft.title;
+      document.getElementById('issue-body').value = draft.body;
+      document.getElementById('issue-labels').value = localStorage.getItem('feedback-issue-labels') || 'feedback,triage';
+      document.getElementById('issue-assignees').value = localStorage.getItem('feedback-issue-assignees') || 'adrilaynez';
+      document.getElementById('issue-repo-owner').value = localStorage.getItem('feedback-issue-owner') || 'adrilaynez';
+      document.getElementById('issue-repo-name').value = localStorage.getItem('feedback-issue-repo') || 'adrian-v2-web';
+      document.getElementById('issue-status').textContent = item.github_issue_url
+        ? `Linked issue detected: ${item.github_issue_url}\nCreating another issue is still possible.`
+        : 'Ready.';
+      document.getElementById('issue-modal-overlay').classList.remove('hidden');
+    }
+
+    function closeIssueModal(e) {
+      if (e && e.target && e.target.id !== 'issue-modal-overlay') return;
+      document.getElementById('issue-modal-overlay').classList.add('hidden');
+      issueItem = null;
+    }
+
+    async function copyIssueDraft() {
+      const title = document.getElementById('issue-title').value.trim();
+      const body = document.getElementById('issue-body').value.trim();
+      try {
+        await navigator.clipboard.writeText(`# ${title}\n\n${body}`);
+        document.getElementById('issue-status').textContent = 'Draft copied to clipboard.';
+      } catch {
+        document.getElementById('issue-status').textContent = 'Could not copy draft to clipboard.';
+      }
+    }
+
+    async function submitIssue() {
+      if (!issueItem) return;
+      const repoOwner = document.getElementById('issue-repo-owner').value.trim();
+      const repoName = document.getElementById('issue-repo-name').value.trim();
+      const title = document.getElementById('issue-title').value.trim();
+      const body = document.getElementById('issue-body').value;
+      const labels = (document.getElementById('issue-labels').value || '').split(',').map(v => v.trim()).filter(Boolean);
+      const assignees = (document.getElementById('issue-assignees').value || '').split(',').map(v => v.trim()).filter(Boolean);
+
+      if (!repoOwner || !repoName) {
+        document.getElementById('issue-status').textContent = 'Repository owner and name are required.';
+        return;
+      }
+
+      localStorage.setItem('feedback-issue-owner', repoOwner);
+      localStorage.setItem('feedback-issue-repo', repoName);
+      localStorage.setItem('feedback-issue-labels', labels.join(','));
+      localStorage.setItem('feedback-issue-assignees', assignees.join(','));
+
+      document.getElementById('issue-status').textContent = 'Creating issue...';
+      try {
+        const result = await apiAction('/api/v1/feedback/github-issue', 'POST', {
+          page_id: issueItem.page_id,
+          section_id: issueItem.section_id,
+          basename: issueItem.basename,
+          archived: Boolean(issueItem.archived),
+          repo_owner: repoOwner,
+          repo_name: repoName,
+          title,
+          body,
+          labels,
+          assignees,
+        });
+
+        if (result.issue_url) {
+          document.getElementById('issue-status').textContent = `${result.message}\n${result.issue_url}`;
+          window.open(result.issue_url, '_blank', 'noopener');
+        } else {
+          document.getElementById('issue-status').textContent = result.message + '\nIssue draft was generated but no remote issue was created.';
+        }
+
+        await loadData();
+      } catch (e) {
+        document.getElementById('issue-status').textContent = `Issue creation failed: ${e.message || e}`;
+      }
+    }
+
+    function renderCard(item, pageId, sectionId) {
+      const hasAuto = item.has_screenshot && item.screenshot_url;
+      const hasUser = item.has_user_screenshot && item.user_screenshot_url;
+      const unread = !Boolean(item.read);
+      const itemKey = keyForItem(item);
+      let badges = '';
+      if (unread) badges += '<span class="badge badge-unread">new</span>';
+      if (item.pinned) badges += '<span class="badge" style="background:rgba(251,191,36,0.12);color:var(--amber)">&#x1f4cc; pinned</span>';
+      if (hasAuto) badges += '<span class="badge badge-img">&#x1f4f7; auto</span>';
+      if (hasUser) badges += '<span class="badge badge-user-img">&#x1f4ce; user</span>';
+      if (item.github_issue_url) badges += '<span class="badge" style="background:rgba(52,211,153,0.12);color:var(--emerald)">issue linked</span>';
+
+      let screenshotsHtml = '';
+      if (hasAuto) {
+        screenshotsHtml += `<div class="fb-ss-group">
+      <div class="fb-ss-header">&#x1f4f7; Auto-captured screenshot</div>
+      <img src="${esc(item.screenshot_url)}" loading="lazy" alt="Auto screenshot"
+           onclick="event.stopPropagation();openLightbox('${esc(item.screenshot_url)}')"
+           onerror="this.outerHTML='<div class=fb-ss-error>Screenshot failed to load</div>'" />
+    </div>`;
+      }
+      if (hasUser) {
+        screenshotsHtml += `<div class="fb-ss-group">
+      <div class="fb-ss-header">&#x1f4ce; User-attached screenshot</div>
+      <img src="${esc(item.user_screenshot_url)}" loading="lazy" alt="User screenshot"
+           onclick="event.stopPropagation();openLightbox('${esc(item.user_screenshot_url)}')"
+           onerror="this.outerHTML='<div class=fb-ss-error>Screenshot failed to load</div>'" />
+    </div>`;
+      }
+
+      const title = item.title || '(No title)';
+      const filterData = [pageId || '', sectionId || '', item.name || '', item.title || '', item.comment || '', item.timestamp || ''].join(' | ');
+      const payload = encodeURIComponent(JSON.stringify(item));
+      return `<div class="fb-card ${unread ? 'unread' : ''}" data-filter="${esc(filterData)}" data-key="${itemKey}" data-item="${payload}" data-read="${item.read ? 'true' : 'false'}">
+    <div class="fb-summary" onclick="toggleCard(this)">
+      <input class="fb-select" type="checkbox" ${selectedKeys.has(itemKey) ? 'checked' : ''} onclick="toggleCardSelection(event, '${itemKey}')" />
+      ${unread ? '<span class="unread-dot"></span>' : ''}
+      <div class="fb-avatar">&#x1f464;</div>
+      <div class="fb-summary-text">
+        <div class="fb-summary-top">
+          <span class="fb-title-strong">${esc(title)}</span>
+          <span class="fb-name">${esc(item.name || 'Anonymous')}</span>
+        </div>
+        <div class="fb-preview">${esc(item.comment || '')}</div>
+      </div>
+      <div class="fb-meta-right">
+        <div class="fb-badges">${badges}</div>
+        <span class="fb-time">${shortTs(item.timestamp)}</span>
+      </div>
+    </div>
+    <div class="fb-detail" style="display:none">
+      <div class="fb-actions">
+        <button class="mini-btn" onclick="event.stopPropagation();copyFeedback(this, itemFromPayload('${payload}'))">Copy text</button>
+        <button class="mini-btn" onclick="event.stopPropagation();markRead(itemFromPayload('${payload}'), ${item.read ? 'false' : 'true'})">${item.read ? 'Mark unread' : 'Mark read'}</button>
+        <button class="mini-btn" onclick="event.stopPropagation();togglePin(this, itemFromPayload('${payload}'))">${item.pinned ? 'Unpin' : 'Pin'}</button>
+        <button class="mini-btn good" onclick="event.stopPropagation();archiveItem(this, itemFromPayload('${payload}'))">${item.archived ? 'Restore' : 'Mark fixed'}</button>
+        <button class="mini-btn" onclick="event.stopPropagation();openIssueModal(itemFromPayload('${payload}'))">Create issue</button>
+        <button class="mini-btn danger" onclick="event.stopPropagation();deleteItem(this, itemFromPayload('${payload}'))">Delete</button>
+      </div>
+      <div class="fb-detail-title">${esc(title)}</div>
+      <div class="fb-detail-comment">${esc(item.comment || '')}</div>
+      <div class="fb-detail-meta">
+        <span>&#x1f552; ${fmtTs(item.timestamp)}</span>
+        <span>Page: ${esc(pageId)}</span>
+        <span>Section: ${esc(sectionId)}</span>
+        ${item.anon_id ? '<span>ID: ' + esc(item.anon_id).slice(0, 12) + '…</span>' : ''}
+        ${item.github_issue_url ? '<span>Issue: <a href="' + esc(item.github_issue_url) + '" target="_blank" rel="noopener" style="color:var(--emerald)">open</a></span>' : ''}
+      </div>
+      ${screenshotsHtml ? '<div class="fb-screenshots">' + screenshotsHtml + '</div>' : '<div style="font-size:0.7rem;color:var(--subtle);font-style:italic">No screenshots attached</div>'}
+    </div>
+  </div>`;
+    }
+
+    function renderSection(secId, items, open, pageId) {
+      const sortedItems = [...items].sort(itemSort);
+      return `<div class="section-group">
+    <button class="sec-btn" onclick="toggleNext(this)">
+      <svg class="chev ${open ? 'open' : ''}" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      <span class="sec-dot"></span>
+      <span class="sec-name">${esc(secId)}</span>
+      <span class="sec-count">${sortedItems.length}</span>
+    </button>
+    <div class="cards" style="${open ? '' : 'display:none'}">${sortedItems.map(item => renderCard(item, pageId, secId)).join('')}</div>
+  </div>`;
+    }
+
+    function renderPage(pageId, sections) {
+      const meta = PAGE_META[pageId] || { label: pageId, accent: 'emerald' };
+      const secs = Object.entries(sections).sort((a, b) => a[0].localeCompare(b[0]));
+      const total = secs.reduce((s, e) => s + e[1].length, 0);
+      return `<div class="page-group" data-accent="${meta.accent}">
+    <button class="toggle-btn" onclick="toggleSibs(this)">
+      <svg class="chev open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      <h2>${esc(meta.label)}</h2>
+      <span class="meta">${total} feedback &middot; ${secs.length} sections</span>
+    </button>
+    <div class="page-sections">${secs.map(([sid, items]) => renderSection(sid, items, true, pageId)).join('')}</div>
+  </div>`;
+    }
+
+    function renderDateMode(activePages, archivedPages) {
+      const activeItems = flattenPages(activePages);
+      const archivedItems = flattenPages(archivedPages).map(i => ({ ...i, archived: true }));
+
+      const activeBlock = `<div class="page-group" data-accent="emerald">
+        <button class="toggle-btn" onclick="toggleSibs(this)">
+          <svg class="chev open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <h2>All Active Feedback</h2>
+          <span class="meta">sorted by date</span>
+        </button>
+        <div class="page-sections"><div class="section-group"><div class="cards">${activeItems.map(i => renderCard(i, i.page_id, i.section_id)).join('')}</div></div></div>
+      </div>`;
+
+      const archivedBlock = archivedItems.length ? `<div class="page-group" data-accent="amber">
+        <button class="toggle-btn" onclick="toggleSibs(this)">
+          <svg class="chev open" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          <h2>Archived Feedback</h2>
+          <span class="meta">sorted by date</span>
+        </button>
+        <div class="page-sections"><div class="section-group"><div class="cards">${archivedItems.map(i => renderCard(i, i.page_id, i.section_id)).join('')}</div></div></div>
+      </div>` : '';
+
+      return activeBlock + archivedBlock;
+    }
+
+    function toggleSibs(btn) {
+      const c = btn.querySelector('.chev'), s = btn.nextElementSibling;
+      if (s.style.display === 'none') { s.style.display = ''; c.classList.add('open'); }
+      else { s.style.display = 'none'; c.classList.remove('open'); }
+    }
+
+    function toggleNext(btn) {
+      const c = btn.querySelector('.chev'), s = btn.nextElementSibling;
+      if (s.style.display === 'none') { s.style.display = ''; c.classList.add('open'); }
+      else { s.style.display = 'none'; c.classList.remove('open'); }
+    }
+
+    async function loadData() {
+      const btn = document.getElementById('refresh-btn');
+      const content = document.getElementById('content');
+      btn.classList.add('loading');
+
+      try {
+        const res = await fetch('/api/v1/feedback/tree');
+        if (!res.ok) throw new Error('HTTP ' + res.status + ': Check that the FastAPI backend is running on this host');
+        const data = await res.json();
+        const pages = data.pages || {};
+        const archivedPages = data.archived_pages || {};
+        loadedItems = allItemsFromTree(pages, archivedPages);
+        keepSelectionValid();
+        recalcUnreadCount();
+
+        let total = 0;
+        for (const pg of Object.values(pages)) for (const items of Object.values(pg)) total += items.length;
+        let archivedTotal = 0;
+        for (const pg of Object.values(archivedPages)) for (const items of Object.values(pg)) archivedTotal += items.length;
+        document.getElementById('total-count').textContent = `${total} active · ${archivedTotal} archived`;
+
+        const sortedActive = Object.entries(pages).sort((a, b) => {
+          const ia = PAGE_ORDER.indexOf(a[0]), ib = PAGE_ORDER.indexOf(b[0]);
+          return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        });
+        const sortedArchived = Object.entries(archivedPages).sort((a, b) => {
+          const ia = PAGE_ORDER.indexOf(a[0]), ib = PAGE_ORDER.indexOf(b[0]);
+          return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+        });
+
+        if (!sortedActive.length && !sortedArchived.length) {
+          content.innerHTML = '<div class="center-msg"><div style="font-size:2.5rem;opacity:0.15">&#x1f4ac;</div><div>No feedback yet</div></div>';
+        } else if (sortMode() === 'date') {
+          content.innerHTML = renderDateMode(pages, archivedPages);
+        } else {
+          const activeHtml = sortedActive.map(([pid, secs]) => renderPage(pid, secs)).join('');
+          const archivedHtml = sortedArchived.length
+            ? `<div style="margin:1.2rem 0 0.4rem;font-size:0.72rem;font-family:monospace;color:var(--subtle);text-transform:uppercase;letter-spacing:.08em">Archived</div>${sortedArchived.map(([pid, secs]) => renderPage(pid, secs)).join('')}`
+            : '';
+          content.innerHTML = activeHtml + archivedHtml;
+        }
+        applyFilter();
+      } catch (e) {
+        content.innerHTML = `<div class="error-box">&#x26a0;&#xfe0f; ${esc(e.message)}</div>
+      <div style="font-size:0.75rem;color:var(--subtle);margin-top:-1rem;padding:0 0.5rem">
+        <p>This viewer must be accessed via the FastAPI backend:</p>
+        <code style="color:var(--blue)">http://localhost:8000/api/v1/feedback/viewer</code>
+        <p style="margin-top:0.5rem">Opening the HTML file directly (e.g. via Live Server) will not work.</p>
+      </div>`;
+      } finally {
+        btn.classList.remove('loading');
+      }
+    }
+
+    window.closeIssueModal = closeIssueModal;
+    window.copyIssueDraft = copyIssueDraft;
+    window.submitIssue = submitIssue;
+    updateToolbarState();
+    loadData();
+  </script>
+</body>
+
+</html>

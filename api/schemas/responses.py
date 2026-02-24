@@ -246,7 +246,11 @@ class NGramTrainingInfo(BaseModel):
     sparsity: float | None = None
     transition_density: float | None = None
     loss_history: list[float] = []
+    train_loss_history: list[float] | None = None
+    val_loss_history: list[float] | None = None
     final_loss: float | None = None
+    final_train_loss: float | None = None
+    final_val_loss: float | None = None
     perplexity: float | None = None
     smoothing_alpha: float | None = None  # Laplace alpha (forwarded from diagnostics)
     corpus_name: str | None = None        # Forwarded for convenience

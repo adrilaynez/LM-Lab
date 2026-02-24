@@ -24,7 +24,7 @@ LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
 # Comma-separated list of allowed origins
 _cors_raw = os.getenv(
     "CORS_ORIGINS",
-    "http://localhost:3000,http://127.0.0.1:3000"
+    "http://localhost:3000,http://127.0.0.1:3000,https://adrianlaynez.dev,https://www.adrianlaynez.dev,https://adrian-v2-web.vercel.app"
 )
 CORS_ORIGINS: list[str] = [o.strip() for o in _cors_raw.split(",") if o.strip()]
 

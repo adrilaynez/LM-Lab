@@ -20,9 +20,9 @@ from api.config import (
     API_TITLE,
     API_DESCRIPTION,
     API_VERSION,
-
+    CORS_ORIGINS,
 )
-from api.routers import health, meta, mlp_grid, models
+from api.routers import health, meta, mlp_grid, models, feedback
 
 
 # --------------------------------------------------------------------------- #
@@ -70,18 +70,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS
-# CORS Configuration
-# Replace with the ACTUAL URL of your frontend (e.g.: https://your-app.vercel.app)
-# Or use ["*"] to allow everything (testing only, not recommended for production)
-origins = [
-    "https://your-deployed-frontend.com",
-    "http://localhost:3000", # To keep working locally
-]
-
+# CORS — origins loaded from api/config.py (env CORS_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -92,6 +84,7 @@ app.include_router(health.router,    prefix="/api/v1")
 app.include_router(meta.router,      prefix="/api/v1")
 app.include_router(mlp_grid.router,  prefix="/api/v1")
 app.include_router(models.router,    prefix="/api/v1")
+app.include_router(feedback.router,  prefix="/api/v1")
 
 
 # Debug: print all registered routes at startup
