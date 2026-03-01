@@ -323,6 +323,7 @@ class NGramGenerationResponse(BaseModel):
     model_id: str
     context_size: int
     generated_text: str
+    generated_only: str  # Only the newly generated tokens (excludes start_text)
     length: int
     temperature: float
     start_text: str

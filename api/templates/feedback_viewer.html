@@ -1494,6 +1494,14 @@
       }
     }
 
+    function sendToRumbo(item) {
+      if (!item) return;
+      const text = encodeURIComponent(item.title || item.comment || '(No title)');
+      const ref = encodeURIComponent(`${item.page_id}/${item.section_id}/${item.timestamp || ''}`);
+      const url = `http://localhost:3001/add?text=${text}&source=feedback&ref=${ref}`;
+      window.open(url, '_blank', 'noopener');
+    }
+
     function applyFilter() {
       const unreadMode = document.getElementById('unread-filter')?.value || 'all';
       const stateMode = document.getElementById('state-filter')?.value || 'all';
@@ -1745,6 +1753,7 @@
     <div class="fb-detail" style="display:none">
       <div class="fb-actions">
         <button class="mini-btn" onclick="event.stopPropagation();aiSuggest(itemFromPayload('${payload}'))" title="AI auto-triage" style="background:linear-gradient(135deg, rgba(167,139,250,0.1), rgba(96,165,250,0.1));border-color:var(--violet)">🤖 AI Suggest</button>
+        <button class="mini-btn" onclick="event.stopPropagation();sendToRumbo(itemFromPayload('${payload}'))" title="Send to Rumbo task list" style="background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.3);color:#818cf8">📋 → Task</button>
         <button class="mini-btn" onclick="event.stopPropagation();copyFeedback(this, itemFromPayload('${payload}'))">Copy text</button>
         <button class="mini-btn" onclick="event.stopPropagation();markRead(itemFromPayload('${payload}'), ${item.read ? 'false' : 'true'})">${item.read ? 'Mark unread' : 'Mark read'}</button>
         <button class="mini-btn" onclick="event.stopPropagation();togglePin(this, itemFromPayload('${payload}'))">${item.pinned ? 'Unpin' : 'Pin'}</button>

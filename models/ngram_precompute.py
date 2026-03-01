@@ -47,6 +47,12 @@ def run_precompute():
     
     print(f"🔤 Vocabulary Size: {vocab_size}")
     
+    # 3. Train / Test split (90 / 10)
+    split_idx = int(0.9 * len(text))
+    train_text = text[:split_idx]
+    test_text  = text[split_idx:]
+    print(f"✂️  Train: {len(train_text):,} chars | Test: {len(test_text):,} chars")
+    
     # Tqdm fallback
     try:
         from tqdm import tqdm
@@ -64,29 +70,28 @@ def run_precompute():
         counts = defaultdict(Counter)
         context_size = n
         
-        # Incremental Loss Calculation
+        # Incremental Loss Calculation (on TRAINING set only)
         # We track "online" loss: predict then update.
         # Use Laplace smoothing for probability estimation to avoid -inf.
         total_nll = 0.0
         nll_steps = 0
         loss_history = []
-        history_interval = len(text) // 50  # 50 points in history
+        history_interval = len(train_text) // 50  # 50 points in history
         if history_interval < 100: history_interval = 100
         
-        # Pre-calculate counts for context (optimization)? No, distinct contexts grow.
         # We need a secondary structure to track "total counts for a context" O(1).
         context_totals = defaultdict(int)
         
-        iterations = len(text) - context_size
+        iterations = len(train_text) - context_size
         
             # Optimization: Local variables
         _vocab_size = vocab_size
         _math_log = math.log
         
-        for i in tqdm(range(iterations), desc=f"N={n}"):
+        for i in tqdm(range(iterations), desc=f"N={n} train"):
             # Context window
-            ctx_str = text[i : i + context_size]
-            next_char = text[i + context_size]
+            ctx_str = train_text[i : i + context_size]
+            next_char = train_text[i + context_size]
             
             ctx_idxs = tuple(stoi[c] for c in ctx_str)
             next_idx = stoi[next_char]
@@ -119,10 +124,41 @@ def run_precompute():
             counts[ctx_idxs][next_idx] += 1
             context_totals[ctx_idxs] += 1
             
-        # Finalize stats
-        final_loss = total_nll / nll_steps if nll_steps > 0 else 0.0
-        loss_history.append(round(final_loss, 4))
-        perplexity = torch.exp(torch.tensor(final_loss)).item()
+        # Finalize online training stats
+        train_loss_online = total_nll / nll_steps if nll_steps > 0 else 0.0
+        loss_history.append(round(train_loss_online, 4))
+        train_perplexity = math.exp(train_loss_online)
+        
+        # --- Compute Held-Out TEST Loss ---
+        # Evaluate on the 10% test set using FULLY-TRAINED counts + Laplace smoothing.
+        # This is the correct, unbiased measure of model quality.
+        total_test_nll = 0.0
+        test_steps = 0
+        test_iterations = len(test_text) - context_size
+        for i in tqdm(range(test_iterations), desc=f"N={n} test eval"):
+            ctx_str = test_text[i : i + context_size]
+            next_char = test_text[i + context_size]
+            # Skip if OOV (shouldn't happen with char-level on same corpus)
+            if any(c not in stoi for c in ctx_str) or next_char not in stoi:
+                continue
+            ctx_idxs = tuple(stoi[c] for c in ctx_str)
+            next_idx  = stoi[next_char]
+            # Laplace-smoothed probability
+            if ctx_idxs in counts:
+                c_count = counts[ctx_idxs].get(next_idx, 0)
+                c_total = context_totals[ctx_idxs]
+                prob = (c_count + 1.0) / (c_total + _vocab_size)
+            else:
+                # Completely unseen context → uniform (same as Laplace with 0 count)
+                prob = 1.0 / _vocab_size
+            total_test_nll += -_math_log(prob)
+            test_steps += 1
+        
+        test_loss = total_test_nll / test_steps if test_steps > 0 else 0.0
+        test_perplexity = math.exp(test_loss)
+        # Primary reported loss/perplexity is the held-out test metric
+        final_loss = test_loss
+        perplexity  = test_perplexity
         
         # --- Compute Rich Statistics ---
         
@@ -166,18 +202,24 @@ def run_precompute():
         print(f"   Matches: {total_transitions:,}")
         print(f"   Unique Contexts: {unique_contexts:,} / {context_space_size:,} ({context_utilization:.2%})")
         print(f"   Sparsity (observed): {sparsity:.2%}")
-        print(f"   Final Loss: {final_loss:.4f} | Perplexity: {perplexity:.4f}")
+        print(f"   Train Loss (online): {train_loss_online:.4f} | Test Loss: {test_loss:.4f} | Test Perplexity: {test_perplexity:.2f}")
             
         # Convert to probabilities and save structure
         
         if context_size == 1:
             # Special case: Dense Matrix for Bigram (N=1 context)
+            # Save LAPLACE-SMOOTHED probabilities so inference is consistent with loss.
             W = torch.zeros((vocab_size, vocab_size), dtype=torch.float32)
-            for ctx, next_counts in counts.items():
-                ctx_idx = ctx[0]
-                total = sum(next_counts.values())
-                for next_idx, count in next_counts.items():
-                    W[ctx_idx, next_idx] = count / total
+            for ctx_idx in range(vocab_size):
+                ctx = (ctx_idx,)
+                if ctx in counts:
+                    total = context_totals[ctx]
+                    for next_idx in range(vocab_size):
+                        count = counts[ctx].get(next_idx, 0)
+                        W[ctx_idx, next_idx] = (count + 1.0) / (total + vocab_size)
+                else:
+                    # Completely unseen context → uniform
+                    W[ctx_idx, :] = 1.0 / vocab_size
             
             saved_data = {
                 "type": "dense",
@@ -185,17 +227,17 @@ def run_precompute():
                 "vocab": all_chars
             }
         else:
-            # Sparse case
-            # We'll save a dictionary: context_tuple (int, ...) -> {next_idx (int): prob (float)}
-            sparse_data = {}
+            # Sparse case — save RAW INTEGER COUNTS + context_totals.
+            # Laplace smoothing is applied at inference time in ngram.py.
+            # This avoids locking in a smoothing constant and keeps the data transparent.
+            sparse_counts = {}
             for ctx, next_counts in counts.items():
-                total = sum(next_counts.values())
-                probs = {k: v / total for k, v in next_counts.items()}
-                sparse_data[ctx] = probs
+                sparse_counts[ctx] = dict(next_counts)  # {next_idx: raw_count}
             
             saved_data = {
                 "type": "sparse",
-                "data": sparse_data,
+                "data": sparse_counts,
+                "context_totals": dict(context_totals),  # {ctx_tuple: total_count}
                 "vocab": all_chars
             }
             
@@ -205,17 +247,21 @@ def run_precompute():
             "vocab_size": vocab_size,
             "top_contexts": top_contexts, # Saved for visualization
             "training_stats": {
-                "total_tokens": len(text),
+                "total_tokens": len(train_text),         # training set size
+                "test_tokens": len(test_text),           # held-out set size
                 "unique_chars": vocab_size,
                 "unique_contexts": unique_contexts,
                 "context_space_size": context_space_size,
                 "context_utilization": context_utilization,
-                "sparsity": sparsity, # Observed sparsity
+                "sparsity": sparsity,
                 "transition_density": transition_density,
                 "total_transitions": total_transitions,
-                "final_loss": final_loss,    # New
-                "perplexity": perplexity,    # New
-                "loss_history": loss_history # New
+                "final_loss": test_loss,                 # PRIMARY: held-out test loss
+                "test_loss": test_loss,                  # alias
+                "perplexity": test_perplexity,           # held-out test perplexity
+                "train_loss": train_loss_online,         # online train loss (for reference)
+                "train_perplexity": train_perplexity,
+                "loss_history": loss_history             # training curve
             }
         }
         

@@ -913,12 +913,14 @@ def ngram_generate(start_text: str, context_size: int, num_tokens: int = 100, te
             output_indices.append(idx_next.item())
 
     generated_text = tokenizer.decode(output_indices)
+    generated_only = tokenizer.decode(output_indices[len(encoded):])  # Exclude seed
     elapsed_ms = (time.perf_counter() - t0) * 1000
 
     return {
         "model_id": f"ngram_n{context_size}",
         "context_size": context_size,
-        "generated_text": generated_text,
+        "generated_text": generated_text,  # Full output (seed + generated)
+        "generated_only": generated_only,   # Only the new tokens
         "length": len(generated_text),
         "temperature": temperature,
         "start_text": start_text,

@@ -44,6 +44,10 @@ class NGramModel(nn.Module):
             self.is_sparse = False
         else:
             self.sparse_data = data["data"]
+            # New format saves raw integer counts + separate context_totals dict.
+            # Old format saved raw MLE float probs (no context_totals key).
+            self.context_totals = data.get("context_totals", {})
+            self.sparse_format = "counts" if self.context_totals else "probs"
             self.is_sparse = True
             
         # Hydrate training stats
@@ -129,17 +133,26 @@ class NGramModel(nn.Module):
         
         if self.is_sparse:
             if ctx_tuple in self.sparse_data:
-                # sparse_data[ctx] is {next_idx: prob}
-                next_probs = self.sparse_data[ctx_tuple]
-                for idx, p in next_probs.items():
-                    probs[idx] = p
+                next_data = self.sparse_data[ctx_tuple]
+                if self.sparse_format == "counts":
+                    # New format: raw integer counts → raw MLE for generation quality.
+                    # Laplace smoothing is reserved for loss evaluation in precompute;
+                    # applying it here over-smoothes sparse contexts and causes garbage output.
+                    total = self.context_totals.get(ctx_tuple, sum(next_data.values()))
+                    if total > 0:
+                        for idx, count in next_data.items():
+                            probs[idx] = count / total
+                    # Unobserved next-tokens stay 0 → log(0+epsilon)≈-23 in forward()
+                else:
+                    # Old format: raw MLE float probs
+                    for idx, p in next_data.items():
+                        probs[idx] = p
             else:
-                # Unseen context -> Fallback to uniform distribution
-                probs = torch.ones(self.vocab_size, device=DEVICE) / self.vocab_size 
+                # Unseen context → uniform distribution
+                probs = torch.ones(self.vocab_size, device=DEVICE) / self.vocab_size
         else:
-             # Dense (Bigram / N=1) -> context is 1 char
-             # ctx_tuple is (char_idx,)
-             # tensor is [V, V]
+             # Dense (Bigram / N=1) — tensor contains Laplace-smoothed probs
+             # (safe: common single-char contexts have huge totals, smoothing is negligible)
              row = ctx_tuple[0]
              if row < self.vocab_size:
                  probs = self.tensor[row]
