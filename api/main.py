@@ -22,7 +22,7 @@ from api.config import (
     API_VERSION,
     CORS_ORIGINS,
 )
-from api.routers import health, meta, mlp_grid, models, feedback
+from api.routers import health, meta, mlp_grid, models, feedback, mlp_pedagogical
 
 
 # --------------------------------------------------------------------------- #
@@ -84,7 +84,8 @@ app.include_router(health.router,    prefix="/api/v1")
 app.include_router(meta.router,      prefix="/api/v1")
 app.include_router(mlp_grid.router,  prefix="/api/v1")
 app.include_router(models.router,    prefix="/api/v1")
-app.include_router(feedback.router,  prefix="/api/v1")
+app.include_router(feedback.router,          prefix="/api/v1")
+app.include_router(mlp_pedagogical.router,   prefix="/api/v1")
 
 
 # Debug: print all registered routes at startup

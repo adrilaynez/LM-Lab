@@ -3,6 +3,7 @@ Inference Service
 Handles model loading, caching, prediction, and text generation.
 """
 
+import json
 import sys
 import time
 from pathlib import Path
@@ -951,7 +952,11 @@ def _load_mlp_checkpoint(emb_dim: int, hidden_size: int, lr: float, steps: int):
     
     # Reconstruct tokenizer
     tokenizer = CharTokenizer()
-    tokenizer.chars = checkpoint["interpretability"]["vocab"]
+    # Try interpretability first (for other models), then metadata (for mlp_grid)
+    vocab = checkpoint.get("interpretability", {}).get("vocab") or checkpoint.get("metadata", {}).get("vocab")
+    if not vocab:
+        raise ValueError("No vocabulary found in checkpoint")
+    tokenizer.chars = vocab
     tokenizer.stoi = {ch: i for i, ch in enumerate(tokenizer.chars)}
     tokenizer.itos = {i: ch for i, ch in enumerate(tokenizer.chars)}
     tokenizer.vocab_size = len(tokenizer.chars)
@@ -962,7 +967,8 @@ def _load_mlp_checkpoint(emb_dim: int, hidden_size: int, lr: float, steps: int):
         vocab_size=tokenizer.vocab_size,
         context_size=config["context_size"],
         emb_dim=config["emb_dim"],
-        hidden_size=config["hidden_size"]
+        hidden_size=config["hidden_size"],
+        num_layers=config.get("num_layers", 1)
     )
     model.load_state_dict(checkpoint["model_state_dict"])
     model.eval()
@@ -1075,11 +1081,11 @@ _MLP_GRID_FILENAME_RE = re.compile(
 
 
 def _mlp_grid_id(emb_dim: int, hidden_size: int, lr: float) -> str:
-    return f"mlp_grid_E{emb_dim}_H{hidden_size}_LR{lr}"
+    return f"mlp_grid_E{emb_dim}_H{hidden_size}_LR{lr:g}"
 
 
 def _mlp_grid_filename(emb_dim: int, hidden_size: int, lr: float) -> str:
-    return f"mlp_E{emb_dim}_H{hidden_size}_LR{lr}.pt"
+    return f"mlp_E{emb_dim}_H{hidden_size}_LR{lr:g}.pt"
 
 
 @lru_cache(maxsize=1)
@@ -1157,24 +1163,27 @@ def list_mlp_grid_configurations() -> list[dict]:
 
 
 @lru_cache(maxsize=16)
-def _load_mlp_grid_checkpoint_raw(emb_dim: int, hidden_size: int, lr: float):
+def _load_mlp_grid_checkpoint_raw(emb_dim: int, hidden_size: int, lr: float, use_timelapse: bool = False):
     """
     Load a raw mlp_grid checkpoint dict (cached). Does NOT instantiate a model.
     """
     fname = _mlp_grid_filename(emb_dim, hidden_size, lr)
-    path = _MLP_GRID_DIR / fname
+    if use_timelapse:
+        path = CHECKPOINT_DIR / "mlp_timelapse" / fname
+    else:
+        path = _MLP_GRID_DIR / fname
     if not path.exists():
         raise FileNotFoundError(f"MLP grid checkpoint not found: {fname}")
     return torch.load(path, map_location=DEVICE, weights_only=False)
 
 
 @lru_cache(maxsize=8)
-def _load_mlp_grid_model(emb_dim: int, hidden_size: int, lr: float):
+def _load_mlp_grid_model(emb_dim: int, hidden_size: int, lr: float, use_timelapse: bool = False):
     """
     Load an MLP model + tokenizer from the mlp_grid checkpoint (final snapshot).
     Returns (model, tokenizer, checkpoint_dict).
     """
-    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
+    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr, use_timelapse=use_timelapse)
     cfg = ck["config"]
     meta = ck.get("metadata", {})
     vocab = meta.get("vocab", [])
@@ -1200,6 +1209,7 @@ def _load_mlp_grid_model(emb_dim: int, hidden_size: int, lr: float):
         context_size=cfg.get("context_size", 3),
         emb_dim=cfg["emb_dim"],
         hidden_size=cfg["hidden_size"],
+        num_layers=cfg.get("num_layers", 1)
     )
     model.load_state_dict(last_snap["model_state_dict"])
     model.eval()
@@ -1272,10 +1282,19 @@ def mlp_grid_generate(emb_dim: int, hidden_size: int, lr: float,
     else:
         encoded = [0]
 
+    # Ensure we have exactly context_size characters
+    context_size = cfg.get("context_size", 3)
+    if len(encoded) < context_size:
+        # Pad with space character (index of space in vocab)
+        space_idx = tokenizer.stoi.get(' ', 0)
+        encoded = [space_idx] * (context_size - len(encoded)) + encoded
+    elif len(encoded) > context_size:
+        # Truncate to context_size (take last context_size chars)
+        encoded = encoded[-context_size:]
+
     idx = torch.tensor([encoded], dtype=torch.long, device=DEVICE)
 
     with torch.no_grad():
-        context_size = cfg.get("context_size", 3)
         for _ in range(max_tokens):
             idx_cond = idx[:, -context_size:]
             logits, _ = model(idx_cond)
@@ -1353,15 +1372,23 @@ def mlp_grid_training_timeline(emb_dim: int, hidden_size: int, lr: float) -> dic
 
 
 def mlp_grid_embedding(emb_dim: int, hidden_size: int, lr: float,
-                        snapshot_step: str | None = None) -> dict:
+                        snapshot_step: str | None = None, use_timelapse: bool = False) -> dict:
     """
     Return the embedding matrix for a specific configuration and snapshot.
     Uses stored interpretability data — no recomputation.
     """
-    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
+    ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr, use_timelapse=use_timelapse)
     cfg = ck["config"]
     meta = ck.get("metadata", {})
-    vocab = meta.get("vocab", [])
+    # vocab may be at root level as dict {'chars': [...]} (mlp_timelapse)
+    # or inside metadata as a plain list (mlp_grid)
+    raw_vocab = ck.get("vocab", None)
+    if isinstance(raw_vocab, dict):
+        vocab = raw_vocab.get("chars", [])
+    elif isinstance(raw_vocab, list):
+        vocab = raw_vocab
+    else:
+        vocab = meta.get("vocab", [])
     snapshots = ck.get("snapshots", {})
 
     sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
@@ -1454,8 +1481,9 @@ def mlp_grid_internals(text: str, emb_dim: int, hidden_size: int, lr: float,
 def mlp_grid_embedding_quality(emb_dim: int, hidden_size: int, lr: float,
                                 snapshot_step: str | None = None) -> dict:
     """
-    Return embedding quality metrics using MLPModel.get_embedding_quality_metrics().
-    Loads the model at the requested snapshot (defaults to final).
+    Return embedding quality metrics + per-token nearest neighbors.
+    Always computes nearest_neighbors live from the embedding matrix
+    (pre-computed snapshots may lack this field).
     """
     ck = _load_mlp_grid_checkpoint_raw(emb_dim, hidden_size, lr)
     cfg = ck["config"]
@@ -1475,23 +1503,75 @@ def mlp_grid_embedding_quality(emb_dim: int, hidden_size: int, lr: float,
 
     snap = snapshots[snapshot_step]
 
-    # Check if pre-computed embedding_quality metrics exist in snapshot
+    # Try pre-computed metrics first
     snap_metrics = snap.get("metrics", {})
-    if "embedding_quality" in snap_metrics:
+    precomputed = snap_metrics.get("embedding_quality", {})
+
+    # If precomputed already has nearest_neighbors, return directly
+    if "nearest_neighbors" in precomputed:
+        nn = precomputed.pop("nearest_neighbors", {})
         return {
             "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
             "config": cfg,
-            "metrics": snap_metrics["embedding_quality"],
+            "metrics": precomputed,
+            "nearest_neighbors": nn,
             "snapshot_step": snapshot_step,
         }
 
-    # Fallback: instantiate model and compute live
+    # Otherwise, compute live from model weights at this snapshot
     tokenizer = CharTokenizer()
     tokenizer.chars = vocab
     tokenizer.stoi = {ch: i for i, ch in enumerate(vocab)}
     tokenizer.itos = {i: ch for i, ch in enumerate(vocab)}
     tokenizer.vocab_size = len(vocab)
 
+    # Display-friendly character set: only include chars the frontend can render meaningfully
+    # This filters out control chars, unicode noise, and rare symbols from the 96-char vocab
+    _DISPLAY_CHARS = set("abcdefghijklmnopqrstuvwxyz. ,;:!?'-\n ")
+    display_idx_set = {i for i, ch in tokenizer.itos.items() if ch in _DISPLAY_CHARS}
+
+    # Get embedding matrix from interpretability data (no model instantiation needed)
+    interp = snap.get("interpretability", {})
+    emb_matrix_raw = interp.get("embedding_matrix")
+
+    if emb_matrix_raw is not None:
+        import numpy as np
+        emb = np.array(emb_matrix_raw if not hasattr(emb_matrix_raw, "tolist") else emb_matrix_raw.tolist())
+        # Compute cosine similarity
+        norms_arr = np.linalg.norm(emb, axis=1, keepdims=True) + 1e-8
+        emb_normed = emb / norms_arr
+        cos_sim = emb_normed @ emb_normed.T
+
+        nearest_neighbors = {}
+        top_k = 5
+        for i, ch in tokenizer.itos.items():
+            if i >= len(cos_sim) or i not in display_idx_set:
+                continue
+            sims = cos_sim[i].copy()
+            sims[i] = -2.0  # exclude self
+            # Mask out non-display chars so they don't appear as neighbors
+            for j in range(len(sims)):
+                if j not in display_idx_set:
+                    sims[j] = -2.0
+            top_indices = np.argsort(sims)[::-1][:top_k]
+            nearest_neighbors[ch] = [
+                {"token": tokenizer.itos.get(int(idx), "?"), "similarity": round(float(sims[idx]), 4)}
+                for idx in top_indices
+                if sims[idx] > -1.0  # skip masked entries
+            ]
+
+        return {
+            "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
+            "config": cfg,
+            "metrics": precomputed if precomputed else {
+                "mean_norm": float(np.mean(np.linalg.norm(emb, axis=1))),
+                "avg_pairwise_dist": float(np.mean(np.sqrt(((emb[:, None] - emb[None, :]) ** 2).sum(axis=2)))),
+            },
+            "nearest_neighbors": nearest_neighbors,
+            "snapshot_step": snapshot_step,
+        }
+
+    # Last resort: instantiate model and compute live
     from models.mlp import MLPModel
     model = MLPModel(
         vocab_size=tokenizer.vocab_size,
@@ -1503,10 +1583,175 @@ def mlp_grid_embedding_quality(emb_dim: int, hidden_size: int, lr: float,
     model.eval()
 
     metrics = model.get_embedding_quality_metrics(tokenizer=tokenizer)
+    nn_raw = metrics.pop("nearest_neighbors", {})
+    # Filter to display chars only
+    nn_filtered = {}
+    for ch, nbrs in nn_raw.items():
+        if ch in _DISPLAY_CHARS:
+            nn_filtered[ch] = [n for n in nbrs if n["token"] in _DISPLAY_CHARS]
 
     return {
         "model_id": _mlp_grid_id(emb_dim, hidden_size, lr),
         "config": cfg,
         "metrics": metrics,
+        "nearest_neighbors": nn_filtered,
         "snapshot_step": snapshot_step,
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  Pedagogical Endpoints — depth_comparison, stability_grid, big_models
+# --------------------------------------------------------------------------- #
+
+_PEDAGOGICAL_DIR = CHECKPOINT_DIR / "pedagogical"
+
+
+def _load_pedagogical_checkpoint(group_dir: str, label: str) -> dict:
+    path = _PEDAGOGICAL_DIR / group_dir / f"{label}.pt"
+    if not path.exists():
+        raise FileNotFoundError(f"Pedagogical checkpoint not found: {path}")
+    return torch.load(path, map_location="cpu", weights_only=False)
+
+
+def _pedagogical_entry(ck: dict) -> dict:
+    """Serialize a single checkpoint into a JSON-safe response entry."""
+    meta = ck["metadata"]
+    cfg  = ck["config"]
+    ml   = ck.get("metrics_log", {})
+
+    # Convert any remaining tensors in state_dict to nothing — we don't return weights
+    return {
+        "label":               meta["label"],
+        "config":              cfg,
+        "final_train_loss":    meta["final_train_loss"],
+        "final_val_loss":      meta["final_val_loss"],
+        "total_params":        meta["total_params"],
+        "train_time_sec":      meta.get("train_time_sec"),
+        "diverged":            meta.get("diverged", False),
+        "expected_uniform_loss": meta.get("expected_uniform_loss"),
+        "techniques":          meta.get("techniques", {}),
+        "generated_samples":   meta.get("generated_samples", []),
+        "loss_curve": {
+            "train": ml.get("train_loss", []),
+            "val":   ml.get("val_loss", []),
+        },
+        "grad_norms":          ml.get("grad_norms", []),
+        "text_snapshots":      ml.get("text_snapshots", []),
+    }
+
+
+def _load_group_summary(group_dir: str) -> list[dict]:
+    """
+    Load all checkpoints for a pedagogical group.
+    Tries summary.json first (fast), falls back to scanning .pt files.
+    """
+    base = _PEDAGOGICAL_DIR / group_dir
+    if not base.exists():
+        raise FileNotFoundError(f"Pedagogical group directory not found: {base}")
+
+    summary_path = base / "summary.json"
+    if summary_path.exists():
+        with open(summary_path) as f:
+            return json.load(f)
+
+    # Fallback: load each .pt file (slower)
+    results = []
+    for pt_file in sorted(base.glob("*.pt")):
+        try:
+            ck = torch.load(pt_file, map_location="cpu", weights_only=False)
+            results.append(_pedagogical_entry(ck))
+        except Exception:
+            continue
+    return results
+
+
+def get_depth_comparison() -> dict:
+    """
+    Return all depth-comparison models (Group 1).
+    Sorted by n_layers ascending.
+    """
+    models = _load_group_summary("depth_comparison")
+    models_sorted = sorted(models, key=lambda m: m["config"].get("num_layers", 0))
+    return {
+        "group": "depth_comparison",
+        "description": "Identical MLP configs with varying depth (n_layers 1-6), no stability techniques.",
+        "models": models_sorted,
+    }
+
+
+def get_stability_grid() -> dict:
+    """
+    Return the stability technique grid (Group 2).
+    Returns flat list + grid_axes metadata.
+    """
+    models = _load_group_summary("stability_grid")
+    return {
+        "group": "stability_grid",
+        "description": "Depths 1-6 × {none, kaiming, kaiming+BN, kaiming+BN+residual}.",
+        "grid_axes": {
+            "rows": "num_layers",
+            "row_values": [1, 2, 3, 4, 6],
+            "columns": "technique",
+            "column_values": ["none", "kaiming", "kaiming+BN", "kaiming+BN+residual"],
+        },
+        "models": models,
+    }
+
+
+def get_big_models() -> dict:
+    """
+    Return the big-model experiments (Group 3).
+    Sorted by total_params ascending.
+    """
+    models = _load_group_summary("big_models")
+    models_sorted = sorted(models, key=lambda m: m.get("total_params") or 0)
+    return {
+        "group": "big_models",
+        "description": "Large MLP configs pushing hidden_size/context_size limits, all stability techniques.",
+        "models": models_sorted,
+    }
+
+
+def get_lr_sweep() -> dict:
+    """
+    Return the learning rate sweep (Group 4).
+    Sorted by learning_rate ascending.
+    """
+    models = _load_group_summary("lr_sweep")
+    models_sorted = sorted(
+        models, key=lambda m: m.get("config", {}).get("learning_rate", 0)
+    )
+    return {
+        "group": "lr_sweep",
+        "description": "Same architecture, 5 learning rates (0.0001→0.1). Shows optimal LR selection.",
+        "models": models_sorted,
+    }
+
+
+def get_dropout_experiment() -> dict:
+    """
+    Return the dropout experiment (Group 5).
+    Sorted by dropout_rate ascending.
+    """
+    models = _load_group_summary("dropout_experiment")
+    models_sorted = sorted(
+        models, key=lambda m: m.get("config", {}).get("dropout_rate", 0)
+    )
+    return {
+        "group": "dropout_experiment",
+        "description": "Same model, dropout=0/0.2/0.5. Shows regularization effect on overfitting.",
+        "models": models_sorted,
+    }
+
+
+def get_overtraining_timeline() -> dict:
+    """
+    Return the overtraining timeline (Group 6).
+    Single model with text snapshots at milestones.
+    """
+    models = _load_group_summary("overtraining_timeline")
+    return {
+        "group": "overtraining_timeline",
+        "description": "200K-step model with text snapshots showing quality evolution.",
+        "models": models,
     }

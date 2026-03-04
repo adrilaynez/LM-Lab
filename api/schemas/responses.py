@@ -443,8 +443,9 @@ class MLPGridInternalsResponse(BaseModel):
 
 
 class MLPGridEmbeddingQualityResponse(BaseModel):
-    """Embedding quality metrics for a specific MLP grid configuration."""
+    """Embedding quality metrics + per-token nearest neighbors."""
     model_id: str
     config: dict
     metrics: dict
+    nearest_neighbors: dict = {}
     snapshot_step: str

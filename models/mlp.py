@@ -17,29 +17,43 @@ import torch.nn.functional as F
 from api.config import DEVICE
 
 class MLPModel(nn.Module):
-    def __init__(self, vocab_size, context_size=3, emb_dim=10, hidden_size=200, seed=1337):
+    def __init__(self, vocab_size, context_size=3, emb_dim=10, hidden_size=200, num_layers=1, seed=1337):
         super().__init__()
         self.vocab_size = vocab_size
         self.context_size = context_size
         self.emb_dim = emb_dim
         self.hidden_size = hidden_size
+        self.num_layers = num_layers
         self.model_type = "mlp"
 
         # Strict reproducibility
         torch.manual_seed(seed)
         
         # --- Architecture ---
-        # 1. Embedding Layer: C (vocab_size, emb_dim)
-        self.C = nn.Embedding(vocab_size, emb_dim)
+        # 1. Embedding Layer: C (vocab_size, emb_dim) - or None if one-hot
+        if emb_dim > 0:
+            self.C = nn.Embedding(vocab_size, emb_dim)
+            self.input_dim = context_size * emb_dim
+        else:
+            self.C = None
+            self.input_dim = context_size * vocab_size
         
-        # 2. Hidden Layer: W1, b1
-        self.input_dim = context_size * emb_dim
-        self.W1 = nn.Parameter(torch.randn(self.input_dim, hidden_size))
-        self.b1 = nn.Parameter(torch.zeros(hidden_size))
+        # 2. Hidden Layers
+        self.layers = nn.ModuleList()
+        current_dim = self.input_dim
+        for _ in range(num_layers):
+            layer = nn.Linear(current_dim, hidden_size)
+            self.layers.append(layer)
+            current_dim = hidden_size
+            
+        # Optional: For interpretability hooks on the *last* hidden layer
+        self.W1 = self.layers[0].weight.T
+        self.b1 = self.layers[0].bias
         
         # 3. Output Layer: W2, b2
-        self.W2 = nn.Parameter(torch.randn(hidden_size, vocab_size))
-        self.b2 = nn.Parameter(torch.zeros(vocab_size))
+        self.output_layer = nn.Linear(hidden_size, vocab_size)
+        self.W2 = self.output_layer.weight.T
+        self.b2 = self.output_layer.bias
         
         # Internal state for interpretability
         self.last_h_pre = None
@@ -52,21 +66,22 @@ class MLPModel(nn.Module):
         """
         Custom initialization for Tanh activation checks.
         - W1: Kaiming-style for Tanh: (5/3) / sqrt(fan_in)
-        - W2: Scale down to 0.1 to reduce initial loss spike
+        - W2: Scale down to 0.01 to reduce initial loss spike
         - b2: Zero init
         """
         gain = 5/3 # Recommended for Tanh
-        std1 = gain / (self.input_dim ** 0.5)
         
         with torch.no_grad():
-            self.W1.normal_(0, std1)
-            self.b1.zero_()
+            for i, layer in enumerate(self.layers):
+                std = gain / (layer.weight.shape[1] ** 0.5)
+                layer.weight.normal_(0, std)
+                layer.bias.zero_()
             
             # Output layer scaled down to ensure initial uniform probability
             # and prevent large initial loss spikes
-            self.W2.normal_(0, 1.0) # Normal first
-            self.W2 *= 0.1 # Then scale by 0.1 as requested
-            self.b2.zero_()
+            self.output_layer.weight.normal_(0, 1.0)
+            self.output_layer.weight *= 0.01
+            self.output_layer.bias.zero_()
 
     def forward(self, x):
         """
@@ -75,20 +90,30 @@ class MLPModel(nn.Module):
         """
         B, T = x.shape
         
-        # 1. Embed
-        emb = self.C(x) # (B, T, emb_dim)
-        emb_flat = emb.view(B, -1) # (B, T * emb_dim)
+        # 1. Embed or One-Hot
+        if self.C is not None:
+            emb = self.C(x) # (B, T, emb_dim)
+            emb_flat = emb.view(B, -1) # (B, T * emb_dim)
+        else:
+            # One-hot encoding
+            one_hot = F.one_hot(x, num_classes=self.vocab_size).float() # (B, T, vocab_size)
+            emb_flat = one_hot.view(B, -1) # (B, T * vocab_size)
         
-        # 2. Hidden Layer
-        h_pre = emb_flat @ self.W1 + self.b1
-        h = torch.tanh(h_pre)
+        # 2. Hidden Layers
+        h = emb_flat
+        h_pre = None
+        for i, layer in enumerate(self.layers):
+            h_pre_current = layer(h)
+            h = torch.tanh(h_pre_current)
+            if i == len(self.layers) - 1:
+                h_pre = h_pre_current
         
-        # Store for interpretability
+        # Store for interpretability (only last layer)
         self.last_h_pre = h_pre
         self.last_h = h
         
         # 3. Output
-        logits = h @ self.W2 + self.b2 # (B, vocab_size)
+        logits = self.output_layer(h) # (B, vocab_size)
         
         return logits, None
         
@@ -103,7 +128,7 @@ class MLPModel(nn.Module):
         grad_health = self.get_gradient_flow_health()
 
         return {
-            "embedding_matrix": self.C.weight.detach().cpu(),
+            "embedding_matrix": self.C.weight.detach().cpu() if self.C is not None else torch.eye(self.vocab_size).cpu(),
             "hidden_activations": self.last_h.detach().cpu() if self.last_h is not None else None,
             "hidden_preactivations": self.last_h_pre.detach().cpu() if self.last_h_pre is not None else None,
             "W1": self.W1.detach().cpu(),
@@ -155,9 +180,13 @@ class MLPModel(nn.Module):
             }
         return stats
 
-    def get_embedding_quality_metrics(self, tokenizer=None):
-        """Compute quantitative metrics for embedding quality."""
-        W = self.C.weight.detach().cpu()
+    def get_embedding_quality_metrics(self, tokenizer=None, top_k=5):
+        """Compute quantitative metrics for embedding quality, including per-token nearest neighbors."""
+        if self.C is not None:
+            W = self.C.weight.detach().cpu()
+        else:
+            W = torch.eye(self.vocab_size).cpu()
+            
         norms = torch.norm(W, dim=1)
         
         # Pairwise distances
@@ -193,6 +222,21 @@ class MLPModel(nn.Module):
                     "vowel_intra_dist": intra_v,
                     "consonant_intra_dist": intra_c
                 })
+
+            # Per-token nearest neighbors by cosine similarity
+            W_norm = W / (torch.norm(W, dim=1, keepdim=True) + 1e-8)
+            cos_sim = W_norm @ W_norm.T  # (V, V)
+
+            nearest_neighbors = {}
+            for i, ch in tokenizer.itos.items():
+                sims = cos_sim[i].clone()
+                sims[i] = -2.0  # exclude self
+                topk_vals, topk_idxs = torch.topk(sims, min(top_k, len(sims) - 1))
+                nearest_neighbors[ch] = [
+                    {"token": tokenizer.itos[int(idx)], "similarity": round(float(val), 4)}
+                    for val, idx in zip(topk_vals, topk_idxs)
+                ]
+            metrics["nearest_neighbors"] = nearest_neighbors
         
         return metrics
 
@@ -220,8 +264,15 @@ class MLPModel(nn.Module):
             return dynamics
             
         with torch.no_grad():
-            curr_emb = self.C.weight.detach().cpu()
-            prev_emb = prev_state_dict['C.weight'].detach().cpu()
+            if self.C is not None:
+                curr_emb = self.C.weight.detach().cpu()
+            else:
+                curr_emb = torch.eye(self.vocab_size).cpu()
+                
+            if 'C.weight' in prev_state_dict:
+                prev_emb = prev_state_dict['C.weight'].detach().cpu()
+            else:
+                prev_emb = torch.eye(self.vocab_size).cpu()
             
             drift = torch.norm(curr_emb - prev_emb).item()
             cos_sim = F.cosine_similarity(curr_emb.view(-1), prev_emb.view(-1), dim=0).item()

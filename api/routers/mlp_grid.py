@@ -149,6 +149,7 @@ async def mlp_grid_embedding(
     hidden_size: int,
     learning_rate: float,
     snapshot_step: str | None = None,
+    use_timelapse: bool = False,
 ):
     """
     Return the embedding matrix for a selected configuration and optional snapshot.
@@ -160,6 +161,7 @@ async def mlp_grid_embedding(
             hidden_size=hidden_size,
             lr=learning_rate,
             snapshot_step=snapshot_step,
+            use_timelapse=use_timelapse,
         )
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail={"code": "CONFIG_NOT_FOUND", "message": str(e)})

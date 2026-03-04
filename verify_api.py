@@ -1,61 +1,49 @@
+"""Verify pedagogical API endpoints serve correct data."""
+from api.services.inference import (
+    get_depth_comparison, get_stability_grid,
+    get_big_models, get_lr_sweep
+)
 
-import requests
-import json
-import sys
+d = get_depth_comparison()
+s = get_stability_grid()
+b = get_big_models()
+l = get_lr_sweep()
 
-BASE_URL = "http://localhost:8000/api/v1"
+print(f"depth_comparison: {len(d['models'])} models")
+for m in d["models"]:
+    div = " DIVERGED" if m.get("diverged") else ""
+    vl = f"{m['final_val_loss']:.4f}" if not m.get("diverged") else "INF"
+    lr = m.get("config", {}).get("learning_rate", "?")
+    nl = m.get("config", {}).get("num_layers", "?")
+    print(f"  L{nl} LR={lr} val={vl}{div}")
 
-def test_visualize():
-    print("Testing /models/bigram/visualize...")
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/models/bigram/visualize",
-            json={"text": "test", "top_k": 5}
-        )
-        if resp.status_code != 200:
-            print(f"FAILED: Status {resp.status_code}")
-            print(resp.text)
-            return False
-            
-        data = resp.json()
-        vis = data.get("visualization", {})
-        
-        if "historical_context" not in vis:
-            print("FAILED: 'historical_context' missing from response.")
-            print("Keys found:", list(vis.keys()))
-            return False
-            
-        print("SUCCESS: 'historical_context' present.")
-        return True
-    except Exception as e:
-        print(f"ERROR: {e}")
-        return False
+print(f"\nstability_grid: {len(s['models'])} models")
+divs = [m["label"] for m in s["models"] if m.get("diverged")]
+valid = [m for m in s["models"] if not m.get("diverged")]
+print(f"  diverged: {divs}")
+if valid:
+    best = min(valid, key=lambda x: x["final_val_loss"])
+    print(f"  best: {best['label']} val={best['final_val_loss']:.4f}")
 
-def test_dataset_lookup():
-    print("\nTesting /models/bigram/dataset_lookup...")
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/models/bigram/dataset_lookup",
-            json={"context": ["t"], "next_token": "e"}
-        )
-        if resp.status_code != 200:
-            print(f"FAILED: Status {resp.status_code}")
-            print(resp.text)
-            return False
-            
-        print("SUCCESS: Dataset lookup works.")
-        return True
-    except Exception as e:
-        print(f"ERROR: {e}")
-        return False
+print(f"\nbig_models: {len(b['models'])} models")
+if b["models"]:
+    best = min(b["models"], key=lambda x: x["final_val_loss"])
+    worst_gap = max(b["models"], key=lambda x: x["final_val_loss"] - x["final_train_loss"])
+    gap = worst_gap["final_val_loss"] - worst_gap["final_train_loss"]
+    print(f"  best val: {best['label']} val={best['final_val_loss']:.4f}")
+    print(f"  worst overfit: {worst_gap['label']} gap=+{gap:.4f}")
 
-if __name__ == "__main__":
-    v_ok = test_visualize()
-    d_ok = test_dataset_lookup()
-    
-    if v_ok and d_ok:
-        print("\nALL TESTS PASSED. Backend is updated.")
-        sys.exit(0)
-    else:
-        print("\nTESTS FAILED. Backend may need restart.")
-        sys.exit(1)
+print(f"\nlr_sweep: {len(l['models'])} models")
+for m in l["models"]:
+    div = " DIVERGED" if m.get("diverged") else ""
+    vl = f"{m['final_val_loss']:.4f}" if not m.get("diverged") else "INF"
+    lr = m.get("config", {}).get("learning_rate", "?")
+    print(f"  LR={lr} val={vl}{div}")
+
+# Check loss curves and generated samples
+for gn, g in [("depth", d), ("stability", s), ("big", b), ("lr", l)]:
+    ms = g["models"]
+    with_curves = sum(1 for m in ms if m.get("loss_curve") and
+                      (len(m["loss_curve"].get("train", [])) > 0 or len(m["loss_curve"].get("val", [])) > 0))
+    with_samples = sum(1 for m in ms if m.get("generated_samples") and len(m["generated_samples"]) > 0)
+    print(f"\n{gn}: {with_curves}/{len(ms)} have loss curves, {with_samples}/{len(ms)} have text samples")
