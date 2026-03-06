@@ -1,0 +1,29 @@
+
+--- depth_comparison ---
+Model: depth_L1        | L:  1 | LR: 0.001 | Params:   9140 | Train L: 1.7720 | Val L: 1.8447 | Diverged: False
+Model: depth_L3        | L:  3 | LR: 0.001 | Params:  42164 | Train L: 1.6177 | Val L: 1.8711 | Diverged: False
+Model: depth_L5        | L:  5 | LR: 0.001 | Params:  75188 | Train L: 1.5018 | Val L: 1.6378 | Diverged: False
+Model: depth_L6        | L:  6 | LR: 0.001 | Params:  91700 | Train L: 1.6652 | Val L: 1.7731 | Diverged: False
+Model: depth_L2        | L:  2 | LR: 0.001 | Params:  25652 | Train L: 4.7413 | Val L: 5.3896 | Diverged: False
+Model: depth_L4        | L:  4 | LR: 0.001 | Params:  58676 | Train L: 4.4068 | Val L: 4.4731 | Diverged: False
+Model: depth_L12       | L: 12 | LR: 0.001 | Params: 190772 | Train L: 3.7540 | Val L: 3.9063 | Diverged: False
+Model: depth_L16       | L: 16 | LR: 0.001 | Params: 256820 | Train L: 3.4014 | Val L: 3.2575 | Diverged: False
+Model: depth_L8        | L:  8 | LR: 0.001 | Params: 124724 | Train L: 2.9551 | Val L: 2.9894 | Diverged: False
+Model: depth_L7        | L:  7 | LR: 0.001 | Params: 108212 | Train L: 3.7322 | Val L: 3.5424 | Diverged: False
+Model: depth_L10       | L: 10 | LR: 0.001 | Params: 157748 | Train L: 2.9736 | Val L: 2.8446 | Diverged: False
+
+--- depth_high_lr ---
+Model: depth_L8_lr001  | L:  8 | LR:  0.01 | Params: 123444 | Train L: 1.5202 | Val L: 1.7290 | Diverged: False
+Model: depth_L4_lr001  | L:  4 | LR:  0.01 | Params:  57396 | Train L: 1.6698 | Val L: 1.7980 | Diverged: False
+Model: depth_L2_lr001  | L:  2 | LR:  0.01 | Params:  24372 | Train L: 1.7225 | Val L: 1.7910 | Diverged: False
+Model: depth_L7_lr001  | L:  7 | LR:  0.01 | Params: 106932 | Train L: 1.5425 | Val L: 1.6495 | Diverged: False
+Model: depth_L10_lr001 | L: 10 | LR:  0.01 | Params: 156468 | Train L: 1.6030 | Val L: 1.7293 | Diverged: False
+Model: depth_L2_lr01   | L:  2 | LR:   0.1 | Params:  24372 | Train L: 1.6735 | Val L: 1.7486 | Diverged: False
+Model: depth_L12_lr001 | L: 12 | LR:  0.01 | Params: 189492 | Train L: 1.5514 | Val L: 1.6866 | Diverged: False
+Model: depth_L4_lr01   | L:  4 | LR:   0.1 | Params:  57396 | Train L: 1.5481 | Val L: 1.7996 | Diverged: False
+Model: depth_L16_lr001 | L: 16 | LR:  0.01 | Params: 255540 | Train L: 1.5752 | Val L: 1.7011 | Diverged: False
+Model: depth_L8_lr01   | L:  8 | LR:   0.1 | Params: 123444 | Train L: 1.6216 | Val L: 1.7125 | Diverged: False
+Model: depth_L10_lr01  | L: 10 | LR:   0.1 | Params: 156468 | Train L: 1.5684 | Val L: 1.7427 | Diverged: False
+Model: depth_L7_lr01   | L:  7 | LR:   0.1 | Params: 106932 | Train L: 1.5557 | Val L: 1.7488 | Diverged: False
+Model: depth_L12_lr01  | L: 12 | LR:   0.1 | Params: 189492 | Train L: 1.6092 | Val L: 1.7649 | Diverged: False
+Model: depth_L16_lr01  | L: 16 | LR:   0.1 | Params: 255540 | Train L: 1.5734 | Val L: 1.7643 | Diverged: False

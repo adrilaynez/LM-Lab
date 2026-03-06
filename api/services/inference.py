@@ -1198,10 +1198,35 @@ def _load_mlp_grid_model(emb_dim: int, hidden_size: int, lr: float, use_timelaps
     # Find the last snapshot with model_state_dict
     snapshots = ck.get("snapshots", {})
     sorted_steps = sorted(snapshots.keys(), key=lambda s: int(s.split("_")[1]))
-    if not sorted_steps:
-        raise FileNotFoundError(f"No snapshots in checkpoint for E{emb_dim}_H{hidden_size}_LR{lr}")
+    
+    if sorted_steps:
+        # Use the last snapshot if available
+        last_snap = snapshots[sorted_steps[-1]]
+        model_state_dict = last_snap["model_state_dict"]
+    else:
+        # Use the direct model_state_dict from checkpoint (for simple checkpoints)
+        if "model_state_dict" not in ck:
+            raise FileNotFoundError(f"No model_state_dict found in checkpoint for E{emb_dim}_H{hidden_size}_LR{lr}")
+        model_state_dict = ck["model_state_dict"]
 
-    last_snap = snapshots[sorted_steps[-1]]
+    # --- Remap old-format state_dict keys if needed ---
+    # Old checkpoints used raw parameters (W1, b1, W2, b2) instead of
+    # nn.ModuleList (layers.0.weight, layers.0.bias, output_layer.weight, ...).
+    # W1 was stored as (input_dim, hidden_size) = transpose of nn.Linear convention.
+    if "W1" in model_state_dict and "layers.0.weight" not in model_state_dict:
+        remapped = {}
+        for k, v in model_state_dict.items():
+            if k == "W1":
+                remapped["layers.0.weight"] = v.T  # (in, out) → (out, in)
+            elif k == "b1":
+                remapped["layers.0.bias"] = v
+            elif k == "W2":
+                remapped["output_layer.weight"] = v.T  # (hidden, vocab) → (vocab, hidden)
+            elif k == "b2":
+                remapped["output_layer.bias"] = v
+            else:
+                remapped[k] = v
+        model_state_dict = remapped
 
     from models.mlp import MLPModel
     model = MLPModel(
@@ -1211,7 +1236,7 @@ def _load_mlp_grid_model(emb_dim: int, hidden_size: int, lr: float, use_timelaps
         hidden_size=cfg["hidden_size"],
         num_layers=cfg.get("num_layers", 1)
     )
-    model.load_state_dict(last_snap["model_state_dict"])
+    model.load_state_dict(model_state_dict, strict=False)
     model.eval()
     model.to(DEVICE)
 
@@ -1667,14 +1692,18 @@ def _load_group_summary(group_dir: str) -> list[dict]:
 
 def get_depth_comparison() -> dict:
     """
-    Return all depth-comparison models (Group 1).
+    Return all depth-comparison models.
+    Tries depth_new_comparison first, falls back to depth_comparison.
     Sorted by n_layers ascending.
     """
-    models = _load_group_summary("depth_comparison")
+    try:
+        models = _load_group_summary("depth_new_comparison")
+    except FileNotFoundError:
+        models = _load_group_summary("depth_comparison")
     models_sorted = sorted(models, key=lambda m: m["config"].get("num_layers", 0))
     return {
         "group": "depth_comparison",
-        "description": "Identical MLP configs with varying depth (n_layers 1-6), no stability techniques.",
+        "description": "Identical MLP configs with varying depth, SGD lr=0.01, random init, no stability techniques.",
         "models": models_sorted,
     }
 
@@ -1754,4 +1783,217 @@ def get_overtraining_timeline() -> dict:
         "group": "overtraining_timeline",
         "description": "200K-step model with text snapshots showing quality evolution.",
         "models": models,
+    }
+
+
+def get_scale_stability() -> dict:
+    """
+    Return the scale stability experiment (Group 8).
+    H=256 and H=512, depths 4-20, kaiming vs kaiming+BN+residual, all SGD.
+    Sorted by hidden_size then num_layers.
+    """
+    models = _load_group_summary("scale_stability")
+    models_sorted = sorted(
+        models,
+        key=lambda m: (
+            m.get("config", {}).get("hidden_size", 0),
+            m.get("config", {}).get("num_layers", 0),
+            m.get("config", {}).get("use_batchnorm", False),
+        ),
+    )
+    return {
+        "group": "scale_stability",
+        "description": "Scale experiment: H=256/512, depths 4-20, kaiming vs kaiming+BN+residual, SGD lr=0.001, no clipping.",
+        "grid_axes": {
+            "rows": "num_layers",
+            "columns": "hidden_size",
+            "techniques": ["kaiming", "kaiming+BN+residual"],
+        },
+        "models": models_sorted,
+    }
+
+
+def get_data_size() -> dict:
+    """
+    Return the data size experiment (Group 9).
+    Same model on 100K-1.7M chars. Sorted by dataset size.
+    """
+    models = _load_group_summary("data_size")
+    # Sort by label to get size order (100K < 1.7M < 1M < 300K < 500K lexicographic won't work)
+    size_order = {"datasize_100K": 0, "datasize_300K": 1, "datasize_500K": 2, "datasize_1M": 3, "datasize_1.7M": 4}
+    models_sorted = sorted(models, key=lambda m: size_order.get(m.get("label", ""), 99))
+    return {
+        "group": "data_size",
+        "description": "Same model (H=256, L=4, ctx=8) on different dataset sizes, SGD lr=0.001.",
+        "models": models_sorted,
+    }
+
+
+def get_activation_battle() -> dict:
+    """
+    Return activation function battle comparison (5 activations).
+    Sorted by final_val_loss ascending (best first).
+    """
+    models = _load_group_summary("activation_battle")
+    # Extract activation name from config or label for display
+    for m in models:
+        if "activation" not in m:
+            label = m.get("label", "")
+            # labels like "act_relu", "act_tanh", etc.
+            m["activation"] = label.replace("act_", "") if label.startswith("act_") else label
+    models_sorted = sorted(
+        models,
+        key=lambda m: m.get("final_val_loss") or m.get("final_train_loss") or 9999.0
+    )
+    return {
+        "group": "activation_battle",
+        "description": "Same architecture (H=128, L=2, ctx=4) trained with 5 activation functions: tanh, relu, gelu, sigmoid, linear.",
+        "models": models_sorted,
+    }
+
+
+def get_embedding_bottleneck() -> dict:
+    """
+    Return embedding dimension bottleneck comparison.
+    Sorted by embedding_dim ascending.
+    """
+    models = _load_group_summary("emb_bottleneck")
+    # Extract emb_dim from config for sorting
+    def _emb_dim(m: dict) -> int:
+        return m.get("config", {}).get("embedding_dim", 0) or m.get("config", {}).get("emb_dim", 0)
+    models_sorted = sorted(models, key=_emb_dim)
+    # Attach emb_dim at top level for convenience
+    for m in models_sorted:
+        if "emb_dim" not in m:
+            m["emb_dim"] = _emb_dim(m)
+    return {
+        "group": "emb_bottleneck",
+        "description": "Same architecture trained with embedding dimensions E=2,4,8,32,128. Shows information bottleneck effect.",
+        "models": models_sorted,
+    }
+
+
+def get_network_shape() -> dict:
+    """
+    Return network shape comparison (cylinder, funnel, pyramid).
+    Loads from checkpoints/pedagogical/network_shape/*.pt via _load_group_summary.
+    Sorted by shape_type name for consistent ordering.
+    """
+    models = _load_group_summary("network_shape")
+    # Attach a shape_type key at top level if not already present
+    _shape_order = {"shape_pyramid": 0, "shape_funnel": 1, "shape_cylinder": 2}
+    for m in models:
+        if "shape_type" not in m:
+            label = m.get("label", "")
+            m["shape_type"] = label.replace("shape_", "") if label.startswith("shape_") else label
+    models_sorted = sorted(models, key=lambda m: _shape_order.get(m.get("label", ""), 99))
+    return {
+        "group": "network_shape",
+        "description": (
+            "Three MLP architectures with same parameter budget: "
+            "pyramid (wide→narrow), funnel (narrow→wide), cylinder (uniform). "
+            "Shows how shape affects learning and information flow."
+        ),
+        "models": models_sorted,
+    }
+
+
+def get_weight_tying() -> dict:
+    """
+    Return the weight tying experiment (Group 13, base corpus).
+    Tied vs untied weights on small vocabulary.
+    """
+    models = _load_group_summary("weight_tying")
+    return {
+        "group": "weight_tying",
+        "corpus": "base",
+        "vocab_size": 28,
+        "description": "Weight tying experiment on base corpus (vocab=28). Tied vs untied output weights.",
+        "models": models,
+    }
+
+
+def get_weight_tying_graham() -> dict:
+    """
+    Return the weight tying experiment (Group 14, Paul Graham corpus).
+    Tied vs untied weights on larger vocabulary.
+    """
+    models = _load_group_summary("weight_tying_graham")
+    return {
+        "group": "weight_tying_graham",
+        "corpus": "paul_graham",
+        "vocab_size": 96,
+        "description": "Weight tying experiment on Paul Graham corpus (vocab=96). Tied vs untied output weights.",
+        "models": models,
+    }
+
+
+_ADVANCED_EMB_DIR = CHECKPOINT_DIR / "mlp_advanced" / "v1"
+_ADVANCED_EMB_DIMS = [2, 4, 6, 10, 16, 24, 32, 50, 128]
+
+
+def get_advanced_embeddings(dims: list[int] | None = None) -> dict:
+    """
+    Return embedding matrices from mlp_advanced checkpoints.
+    Each model was trained with a different embedding dimension (2D–128D),
+    using 3-layer architecture, orthogonal init, context_size=8, H=256.
+
+    Args:
+        dims: subset of dimensions to return (default: all available).
+
+    Returns:
+        { models: [{ emb_dim, vocab, embedding_matrix, final_train_loss,
+                     final_val_loss, generated_samples, config }] }
+    """
+    requested_dims = dims if dims else _ADVANCED_EMB_DIMS
+
+    results = []
+    for dim in requested_dims:
+        ck_path = _ADVANCED_EMB_DIR / f"mlp_advanced_{dim}d_checkpoint.pt"
+        if not ck_path.exists():
+            continue
+        try:
+            ck = torch.load(ck_path, map_location="cpu", weights_only=False)
+
+            # Extract embedding matrix as nested list (vocab_size × emb_dim)
+            state = ck.get("model_state_dict", {})
+            emb_weight = state.get("C.weight")
+            if emb_weight is None:
+                continue
+            emb_matrix = emb_weight.tolist()  # [[float, ...], ...]
+
+            cfg = ck.get("config", {})
+            meta = ck.get("metadata", {})
+
+            # Prefer metadata vocab (sorted list), fall back to config chars
+            vocab = meta.get("vocab") or list(cfg.get("chars", []))
+
+            results.append({
+                "emb_dim": dim,
+                "vocab": vocab,
+                "vocab_size": len(vocab),
+                "embedding_matrix": emb_matrix,
+                "config": {
+                    "emb_dim": dim,
+                    "context_size": cfg.get("context_size", 8),
+                    "hidden_size": cfg.get("hidden_size", 256),
+                    "num_layers": cfg.get("num_layers", 3),
+                    "max_steps": cfg.get("training_steps", 50000),
+                },
+                "final_train_loss": meta.get("final_train_loss"),
+                "final_val_loss": meta.get("final_val_loss"),
+                "total_params": meta.get("total_params"),
+                "generated_samples": meta.get("generated_samples", []),
+            })
+        except Exception:
+            continue
+
+    return {
+        "group": "advanced_embeddings",
+        "description": (
+            "MLPAdvanced models trained with embedding dims 2–128D. "
+            "Orthogonal init, 3-layer H=256, context_size=8, 50K steps. "
+            "Use to compare how embedding dimension affects structure formation."
+        ),
+        "models": sorted(results, key=lambda m: m["emb_dim"]),
     }

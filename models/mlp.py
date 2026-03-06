@@ -83,10 +83,11 @@ class MLPModel(nn.Module):
             self.output_layer.weight *= 0.01
             self.output_layer.bias.zero_()
 
-    def forward(self, x):
+    def forward(self, x, targets=None):
         """
         Forward pass.
         x: (batch_size, context_size)
+        targets: (batch_size, context_size) - optional, for loss computation
         """
         B, T = x.shape
         
@@ -115,7 +116,17 @@ class MLPModel(nn.Module):
         # 3. Output
         logits = self.output_layer(h) # (B, vocab_size)
         
-        return logits, None
+        # 4. Compute loss if targets provided
+        loss = None
+        if targets is not None:
+            # For language modeling, we predict the next token for each position
+            # So we use all targets as a flat tensor
+            targets_flat = targets.reshape(-1)
+            # Repeat logits for each position in context (since we predict next token)
+            logits_repeated = logits.repeat_interleave(T, dim=0)
+            loss = F.cross_entropy(logits_repeated, targets_flat)
+        
+        return logits, loss
         
     def get_internals(self, x=None):
         """

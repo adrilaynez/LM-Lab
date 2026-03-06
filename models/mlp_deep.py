@@ -29,17 +29,23 @@ class MLPDeepModel(nn.Module):
         use_residual=False,
         dropout_rate=0.0,
         seed=1337,
+        hidden_sizes=None,         # [int] for custom shape (overrides hidden_size/num_layers)
+        activation_func="tanh",    # "linear" | "sigmoid" | "tanh" | "relu" | "gelu"
+        tie_weights=False,         # W_out = W_emb.T
     ):
         super().__init__()
         self.vocab_size = vocab_size
         self.context_size = context_size
         self.emb_dim = emb_dim
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
+        self.hidden_sizes = hidden_sizes if hidden_sizes is not None else [hidden_size] * num_layers
+        self.hidden_size = hidden_size if hidden_sizes is None else self.hidden_sizes[-1]
+        self.num_layers = len(self.hidden_sizes)
         self.init_strategy = init_strategy
         self.use_batchnorm = use_batchnorm
-        self.use_residual = use_residual
+        self.use_residual = use_residual if hidden_sizes is None else False # Disable residual for custom shapes
         self.dropout_rate = dropout_rate
+        self.activation_func = activation_func.lower()
+        self.tie_weights = tie_weights
         self.model_type = "mlp_deep"
 
         torch.manual_seed(seed)
@@ -50,26 +56,44 @@ class MLPDeepModel(nn.Module):
         # Hidden layers
         input_dim = context_size * emb_dim
         layers = []
-        for i in range(num_layers):
-            in_features = input_dim if i == 0 else hidden_size
-            layers.append(nn.Linear(in_features, hidden_size))
+        for i, h_size in enumerate(self.hidden_sizes):
+            in_features = input_dim if i == 0 else self.hidden_sizes[i - 1]
+            layers.append(nn.Linear(in_features, h_size))
             if use_batchnorm:
-                layers.append(nn.BatchNorm1d(hidden_size))
-            layers.append(nn.Tanh())
+                layers.append(nn.BatchNorm1d(h_size))
+            
+            if self.activation_func == "sigmoid":
+                layers.append(nn.Sigmoid())
+            elif self.activation_func == "tanh":
+                layers.append(nn.Tanh())
+            elif self.activation_func == "relu":
+                layers.append(nn.ReLU())
+            elif self.activation_func == "gelu":
+                layers.append(nn.GELU())
+            elif self.activation_func == "linear":
+                layers.append(nn.Identity())
+            else:
+                raise ValueError(f"Unknown activation: {self.activation_func}")
+                
             if dropout_rate > 0:
                 layers.append(nn.Dropout(dropout_rate))
         self.hidden = nn.Sequential(*layers)
 
-        # Group size for residual forward (Linear + [BN] + Tanh + [Dropout])
+        # Group size for residual forward (Linear + [BN] + Activation + [Dropout])
         self._group_size = 2 + int(use_batchnorm) + int(dropout_rate > 0)
 
-        # For residual: need a projection if input_dim != hidden_size
+        # For residual: need a projection if input_dim != expected hidden_size
         self.residual_proj = None
-        if use_residual and input_dim != hidden_size:
-            self.residual_proj = nn.Linear(input_dim, hidden_size)
+        if self.use_residual and input_dim != self.hidden_size:
+            self.residual_proj = nn.Linear(input_dim, self.hidden_size)
 
         # Output layer
-        self.output = nn.Linear(hidden_size, vocab_size)
+        if self.tie_weights:
+            assert self.hidden_size == emb_dim, f"For tie_weights, last hidden size ({self.hidden_size}) must equal emb_dim ({emb_dim})"
+            # We don't create an output layer, we will use C.weight
+            self.output = None
+        else:
+            self.output = nn.Linear(self.hidden_size, vocab_size)
 
         # Initialize weights
         self._init_weights()
@@ -85,7 +109,18 @@ class MLPDeepModel(nn.Module):
                         if "residual_proj" in name:
                             nn.init.kaiming_normal_(param, nonlinearity="linear")
                         else:
-                            nn.init.kaiming_normal_(param, nonlinearity="tanh")
+                            # Adjust nonlinearity for kaiming based on activation func
+                            if self.activation_func in ["relu", "gelu", "linear", "sigmoid"]:
+                                # Kaiming is designed for ReLU, let's use it for gelu and linear as best effort
+                                # For sigmoid it's technically Xavier but PyTorch accepts 'sigmoid' in kaiming
+                                nl = "relu" if self.activation_func in ["relu", "gelu"] else self.activation_func
+                                try:
+                                    nn.init.kaiming_normal_(param, nonlinearity=nl)
+                                except ValueError:
+                                    # Fallback if unsupported (like gelu)
+                                    nn.init.kaiming_normal_(param, nonlinearity="relu")
+                            else:
+                                nn.init.kaiming_normal_(param, nonlinearity="tanh")
                     else:
                         # Random: default PyTorch init (uniform), intentionally bad for deep nets
                         nn.init.normal_(param, 0, 1.0)
@@ -94,23 +129,39 @@ class MLPDeepModel(nn.Module):
 
             # Scale down output layer to prevent initial loss spike
             # Only for proper init — random init should show the full problem
-            if self.init_strategy == "kaiming":
+            if self.init_strategy == "kaiming" and self.output is not None:
                 self.output.weight.mul_(0.1)
 
-    def forward(self, x):
+    def forward(self, x, return_activations=False):
+        """
+        Args:
+            x: Input token indices (B, T)
+            return_activations: If True, returns (logits, loss, activations_list)
+        """
         B, T = x.shape
         emb = self.C(x)  # (B, T, emb_dim)
         emb_flat = emb.view(B, -1)  # (B, T * emb_dim)
 
+        activations = []
         if self.use_residual:
-            h = self._forward_residual(emb_flat)
+            h = self._forward_residual(emb_flat, activations if return_activations else None)
         else:
-            h = self.hidden(emb_flat)
+            h = emb_flat
+            for layer in self.hidden:
+                h = layer(h)
+                if return_activations and isinstance(layer, (nn.Tanh, nn.ReLU, nn.GELU, nn.Sigmoid, nn.Identity)):
+                    activations.append(h.detach())
 
-        logits = self.output(h)
+        if self.tie_weights:
+            logits = h @ self.C.weight.T
+        else:
+            logits = self.output(h)
+            
+        if return_activations:
+            return logits, None, activations
         return logits, None
 
-    def _forward_residual(self, x):
+    def _forward_residual(self, x, activations=None):
         """Forward with residual connections between hidden layers."""
         group_size = self._group_size
         layers = list(self.hidden.children())
@@ -135,6 +186,9 @@ class MLPDeepModel(nn.Module):
             
             # Add residual connection
             h = h + residual
+            
+            if activations is not None:
+                activations.append(h.detach())
 
         return h
 
@@ -152,17 +206,40 @@ class MLPDeepModel(nn.Module):
             "weight_stats": self.get_weight_stats(),
         }
 
-    def calculate_dead_neurons(self, threshold=0.99):
-        """Returns fraction of saturated neurons across all hidden layers."""
+    def calculate_dead_neurons(self, activations_list=None):
+        """
+        Returns fraction of saturated neurons across all hidden layers.
+        If using ReLU/GELU: neurons that are strictly <= 0
+        If using Tanh: neurons with abs(activation) > 0.99
+        If using Sigmoid: neurons with activation < 0.01 or > 0.99
+        """
+        if not activations_list:
+            return 0.0
+
         total_dead = 0
         total_neurons = 0
-        group_size = self._group_size
-        layers = list(self.hidden.children())
 
-        # Use hooks or just check tanh outputs
-        # For simplicity, do a forward pass and check
-        # (last forward pass is cached)
-        return 0.0  # Placeholder — filled in by training script
+        for acts in activations_list:
+            # acts shape: (B, T, hidden_size)
+            # A neuron is considered dead if it's "dead" across ALL examples and tokens in the batch.
+            if self.activation_func in ["relu", "gelu"]:
+                # dead if <= 0 for all B, T
+                is_dead = (acts <= 0).all(dim=0).all(dim=0)
+            elif self.activation_func == "tanh":
+                # saturated if abs >= 0.99 for all B, T
+                is_dead = (acts.abs() >= 0.99).all(dim=0).all(dim=0)
+            elif self.activation_func == "sigmoid":
+                # saturated if <= 0.01 or >= 0.99
+                is_dead = ((acts <= 0.01) | (acts >= 0.99)).all(dim=0).all(dim=0)
+            else:
+                is_dead = torch.zeros(acts.shape[-1], dtype=torch.bool, device=acts.device)
+            
+            total_dead += is_dead.sum().item()
+            total_neurons += is_dead.numel()
+
+        if total_neurons == 0:
+            return 0.0
+        return total_dead / total_neurons
 
     def get_weight_stats(self):
         stats = {}
