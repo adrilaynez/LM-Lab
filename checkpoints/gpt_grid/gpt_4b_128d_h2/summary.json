@@ -1,0 +1,16 @@
+{
+  "config_id": "gpt_4b_128d_h2",
+  "total_params": 836352,
+  "best_val_loss": 1.2906,
+  "final_train_loss": 1.1648,
+  "final_val_loss": 1.3103,
+  "training_time_sec": 3239.9,
+  "max_steps": 50000,
+  "purpose": "head scaling: 2 heads",
+  "n_blocks": 4,
+  "d_model": 128,
+  "n_heads": 2,
+  "d_ff": 512,
+  "block_size": 256,
+  "dropout": 0.1
+}

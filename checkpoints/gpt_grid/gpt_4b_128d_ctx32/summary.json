@@ -1,0 +1,16 @@
+{
+  "config_id": "gpt_4b_128d_ctx32",
+  "total_params": 807680,
+  "best_val_loss": 1.4106,
+  "final_train_loss": 1.3008,
+  "final_val_loss": 1.4369,
+  "training_time_sec": 725.1,
+  "max_steps": 50000,
+  "purpose": "context scaling: 32 chars",
+  "n_blocks": 4,
+  "d_model": 128,
+  "n_heads": 4,
+  "d_ff": 512,
+  "block_size": 32,
+  "dropout": 0.1
+}

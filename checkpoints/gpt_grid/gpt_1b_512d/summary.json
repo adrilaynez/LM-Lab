@@ -1,0 +1,16 @@
+{
+  "config_id": "gpt_1b_512d",
+  "total_params": 3266048,
+  "best_val_loss": 1.3946,
+  "final_train_loss": 1.1451,
+  "final_val_loss": 1.4186,
+  "training_time_sec": 1072.6,
+  "max_steps": 50000,
+  "purpose": "\u00a708 xlarge single-block (ceiling demo)",
+  "n_blocks": 1,
+  "d_model": 512,
+  "n_heads": 8,
+  "d_ff": 2048,
+  "block_size": 128,
+  "dropout": 0.1
+}

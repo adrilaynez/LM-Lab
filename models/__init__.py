@@ -1,6 +1,7 @@
 from .bigram import BigramModel
 from .mlp import MLPModel
 from .ngram import NGramModel
+from .gpt import GPTModel
 
 def get_model_class(model_type):
     """
@@ -13,6 +14,6 @@ def get_model_class(model_type):
     elif model_type == 'mlp':
         return MLPModel
     elif model_type == 'gpt':
-        raise NotImplementedError("GPT not implemented yet")
+        return GPTModel
     else:
         raise ValueError(f"Unknown model architecture: {model_type}")

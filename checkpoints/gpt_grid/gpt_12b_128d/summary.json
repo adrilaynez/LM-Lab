@@ -1,0 +1,16 @@
+{
+  "config_id": "gpt_12b_128d",
+  "total_params": 2418432,
+  "best_val_loss": 1.2806,
+  "final_train_loss": 0.7826,
+  "final_val_loss": 1.4816,
+  "training_time_sec": 11927.5,
+  "max_steps": 50000,
+  "purpose": "\u00a709 depth=12",
+  "n_blocks": 12,
+  "d_model": 128,
+  "n_heads": 4,
+  "d_ff": 512,
+  "block_size": 256,
+  "dropout": 0.1
+}
